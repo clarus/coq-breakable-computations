@@ -1,8 +1,8 @@
 (** Experiments on encoding concurrency in Coq. *)
-Require Import Arith.
-Require Import List.
-Require Import Streams.
-Require Import String.
+Require Import Coq.Arith.Arith.
+Require Import Coq.Lists.List.
+Require Import Coq.Lists.Streams.
+Require Import Coq.Strings.String.
 
 Import ListNotations.
 Local Open Scope string_scope.

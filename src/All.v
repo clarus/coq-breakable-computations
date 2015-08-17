@@ -136,10 +136,25 @@ Module Entropy.
       | S n => Streams.hd e :: hds n (Streams.tl e)
       end.
 
-    Compute hds 20 (random_naturals 0).
-    Compute hds 20 (random 0).
-    Compute hds 20 (random 12).
-    Compute hds 20 (random 23).
+    Definition test_1 : hds 20 (random_naturals 0) = [
+      0; 187; 206; 249; 252; 151; 138; 149; 120; 243;
+      198; 177; 116; 207; 130; 77; 240; 43; 190; 105] % N :=
+      eq_refl.
+
+    Definition test_2 : hds 20 (random 0) = [
+      true; true; false; false; false; true; true; true; false; false;
+      false; true; false; false; true; false; false; true; true; false] :=
+      eq_refl.
+
+    Definition test_3 : hds 20 (random 12) = [
+      true; true; true; true; true; true; false; false; true; false; true;
+      false; true; true; false; false; false; true; true; true] :=
+      eq_refl.
+
+    Definition test_4 : hds 20 (random 23) = [
+      true; true; true; false; false; false; true; false; false; true;
+      false; false; true; true; false; false; true; false; true; false] :=
+      eq_refl.
   End Test.
 End Entropy.
 
@@ -249,9 +264,14 @@ Module Event.
       | (output, _, _) => output
       end.
 
-    Compute eval [] Entropy.left.
-    Compute eval [1; 2; 3] Entropy.left.
-    Compute eval [1; 2; 3] Entropy.right.
+    Definition test_1 : eval [] Entropy.left = [] :=
+      eq_refl.
+
+    Definition test_2 : eval [1; 2; 3] Entropy.left = [3; 2; 1] :=
+      eq_refl.
+
+    Definition test_3 : eval [1; 2; 3] Entropy.right = [1; 2; 3] :=
+      eq_refl.
   End Test.
 End Event.
 
@@ -282,14 +302,38 @@ Module Test.
     Definition two_prints_par (n : nat) : C.t (Log.t nat * Entropy.t) Empty_set unit :=
       Concurrency.par_unit (print_before_par n) (print_before_par (2 * n)).
 
-    Compute eval_seq (print_before 12).
-    Compute eval_seq (two_prints_seq 12).
+    Definition test_1 : eval_seq (print_before 12) = [
+      0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11] :=
+      eq_refl.
 
-    Compute eval_par (print_before_par 12) Entropy.half.
-    Compute eval_par (two_prints_par 12) Entropy.left.
-    Compute eval_par (two_prints_par 12) Entropy.right.
-    Compute eval_par (two_prints_par 12) Entropy.half.
-    Compute eval_par (two_prints_par 12) (Entropy.random 0).
+    Definition test_2 : eval_seq (two_prints_seq 12) = [
+      0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11; 12; 13; 14; 15; 16; 17; 18; 19;
+      20; 21; 22; 23; 0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11] :=
+      eq_refl.
+
+    Definition test_3 : eval_par (print_before_par 12) Entropy.half = [
+      0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11] :=
+      eq_refl.
+
+    Definition test_4 : eval_par (two_prints_par 12) Entropy.left = [
+      0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11; 12; 13; 14; 15; 16; 17; 18; 19;
+      20; 21; 22; 23; 0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11] :=
+      eq_refl.
+
+    Definition test_5 : eval_par (two_prints_par 12) Entropy.right = [
+      0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11; 0; 1; 2; 3; 4; 5; 6; 7; 8; 9;
+      10; 11; 12; 13; 14; 15; 16; 17; 18; 19; 20; 21; 22; 23] :=
+      eq_refl.
+
+    Definition test_6 : eval_par (two_prints_par 12) Entropy.half = [
+      0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11; 12; 0; 13; 1; 14; 2; 15; 3; 16;
+      4; 17; 5; 18; 6; 19; 7; 20; 8; 21; 9; 22; 10; 23; 11] :=
+      eq_refl.
+
+    Definition test_7 : eval_par (two_prints_par 12) (Entropy.random 0) = [
+      0; 1; 2; 3; 4; 5; 6; 7; 8; 0; 9; 10; 1; 11; 2; 12; 13; 3; 4; 14; 15;
+      5; 16; 17; 6; 18; 19; 20; 7; 8; 9; 21; 22; 23; 10; 11] :=
+      eq_refl.
   End PrintList.
 
   (** A list of threads are printing a number each. *)
@@ -300,10 +344,25 @@ Module Test.
     Definition print_seq_par (n k : nat) : C.t (Log.t nat * Entropy.t) Empty_set unit :=
       List.iter_par (fun n => lift_state _ (Log.log n)) (List.seq n k).
 
-    Compute eval_seq (print_seq_seq 10 20).
-    Compute eval_par (print_seq_par 10 20) Entropy.left.
-    Compute eval_par (print_seq_par 10 20) Entropy.right.
-    Compute eval_par (print_seq_par 10 20) (Entropy.random 12).
+    Definition test_1 : eval_seq (print_seq_seq 10 20) = [
+      29; 28; 27; 26; 25; 24; 23; 22; 21; 20; 19; 18; 17; 16; 15; 14; 13;
+      12; 11; 10] :=
+      eq_refl.
+
+    Definition test_2 : eval_par (print_seq_par 10 20) Entropy.left = [
+      29; 28; 27; 26; 25; 24; 23; 22; 21; 20; 19; 18; 17; 16; 15; 14; 13;
+      12; 11; 10] :=
+      eq_refl.
+
+    Definition test_3 : eval_par (print_seq_par 10 20) Entropy.right = [
+      10; 11; 12; 13; 14; 15; 16; 17; 18; 19; 20; 21; 22; 23; 24; 25; 26;
+      27; 28; 29] :=
+      eq_refl.
+
+    Definition test_4 : eval_par (print_seq_par 10 20) (Entropy.random 12) = [
+      24; 28; 29; 22; 27; 25; 26; 21; 20; 23; 16; 19; 17; 18; 15; 14; 13;
+      12; 11; 10] :=
+      eq_refl.
   End ListOfPrints.
 
   (** Simple manager for a list of things to do, with a UI saving data on a server. *)

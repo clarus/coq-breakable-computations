@@ -20,22 +20,22 @@ Import Result.
 (** Definition of a computation. *)
 Module C.
   Inductive t (S : Type) (E : Type) (A : Type) : Type :=
-  | make : (S -> Result.t A E (t S E A) * S) -> t S E A.
-  Arguments make {S E A} _.
+  | New : (S -> Result.t A E (t S E A) * S) -> t S E A.
+  Arguments New {S E A} _.
 
   Definition open {S E A} (x : t S E A) :=
     match x with
-    | make x' => x'
+    | New x' => x'
     end.
 End C.
 
 (** Monadic return. *)
 Definition ret {S E A} (x : A) : C.t S E A :=
-  C.make (fun s => (Val x, s)).
+  C.New (fun s => (Val x, s)).
 
 (** Monadic bind. *)
 Fixpoint bind {S E A B} (x : C.t S E A) (f : A -> C.t S E B) : C.t S E B :=
-  C.make (fun s =>
+  C.New (fun s =>
     match C.open x s with
     | (Val x, s) => (Mon (f x), s)
     | (Err e, s) => (Err e, s)
@@ -55,7 +55,7 @@ Fixpoint eval {S E A} (x : C.t S E A) (s : S) : (A + E) * S :=
 
 (** Augment the state. *)
 Fixpoint lift_state {S1 S2 E A} (x : C.t S1 E A) : C.t (S1 * S2) E A :=
-  C.make (fun (s : S1 * S2) =>
+  C.New (fun (s : S1 * S2) =>
     let (s1, s2) := s in
     match C.open x s1 with
     | (Val x, s1) => (Val x, (s1, s2))
@@ -66,7 +66,7 @@ Fixpoint lift_state {S1 S2 E A} (x : C.t S1 E A) : C.t (S1 * S2) E A :=
 (** Apply an isomorphism to the state. *)
 Fixpoint map_state {S1 S2 E A} (f : S1 -> S2) (g : S2 -> S1) (x : C.t S1 E A)
   : C.t S2 E A :=
-  C.make (fun (s2 : S2) =>
+  C.New (fun (s2 : S2) =>
     let s1 := g s2 in
     let (r, s1) := C.open x s1 in
     (match r with
@@ -77,27 +77,27 @@ Fixpoint map_state {S1 S2 E A} (f : S1 -> S2) (g : S2 -> S1) (x : C.t S1 E A)
 
 Module Option.
   Definition none {A} : C.t unit unit A :=
-    C.make (fun _ => (Err tt, tt)).
+    C.New (fun _ => (Err tt, tt)).
 End Option.
 
 Module Error.
   Definition raise {E A} (e : E) : C.t unit E A :=
-    C.make (fun _ => (Err e, tt)).
+    C.New (fun _ => (Err e, tt)).
 End Error.
 
 Module Log.
   Definition t := list.
 
   Definition log {A} (x : A) : C.t (t A) Empty_set unit :=
-    C.make (fun s => (Val tt, x :: s)).
+    C.New (fun s => (Val tt, x :: s)).
 End Log.
 
 Module State.
   Definition read {S : Type} (_ : unit) : C.t S Empty_set S :=
-    C.make (fun s => (Val s, s)).
+    C.New (fun s => (Val s, s)).
 
   Definition write {S : Type} (x : S) : C.t S Empty_set unit :=
-    C.make (fun _ => (Val tt, x)).
+    C.New (fun _ => (Val tt, x)).
 End State.
 
 (** A source of information for a concurrent scheduler. *)
@@ -160,7 +160,7 @@ Module Concurrency.
     (x : C.t (S * Entropy.t) E A) (y : C.t (S * Entropy.t) E B) {struct x}
     : C.t (S * Entropy.t) E (A * B) :=
     let fix par_aux y {struct y} : C.t (S * Entropy.t) E (A * B) :=
-      C.make (fun (s : S * Entropy.t) =>
+      C.New (fun (s : S * Entropy.t) =>
         match s with
         | (s, Streams.Cons b bs) =>
           if b then
@@ -178,7 +178,7 @@ Module Concurrency.
             | Mon y => Mon (par_aux y)
             end, ss)
         end) in
-    C.make (fun (s : S * Entropy.t) =>
+    C.New (fun (s : S * Entropy.t) =>
       match s with
       | (s, Streams.Cons b bs) =>
         if b then
@@ -204,7 +204,7 @@ Module Concurrency.
 
   (** Make [x] atomic. *)
   Fixpoint atomic {S E A} (x : C.t S E A) : C.t S E A :=
-    C.make (fun (s : S) =>
+    C.New (fun (s : S) =>
       match C.open x s with
       | (Val _, _) as y | (Err _, _) as y => y
       | (Mon x, s) => C.open (atomic x) s
@@ -232,13 +232,13 @@ Module Event.
   Definition t := list.
 
   Definition loop_seq {S E A} (f : A -> C.t S E unit) : C.t (S * t A) E unit :=
-    C.make (fun (s : S * t A) =>
+    C.New (fun (s : S * t A) =>
       let (s, events) := s in
       (Mon (lift_state (List.iter_seq f events)), (s, []))).
 
   Definition loop_par {S E A} (f : A -> C.t (S * Entropy.t) E unit)
     : C.t (S * t A * Entropy.t) E unit :=
-    C.make (fun (s : S * t A * Entropy.t) =>
+    C.New (fun (s : S * t A * Entropy.t) =>
       match s with
       | (s, events, entropy) =>
         let c := List.iter_par f events in

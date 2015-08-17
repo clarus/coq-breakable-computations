@@ -8,11 +8,11 @@ Module Result.
   Inductive t (A B C : Type) : Type :=
   | Val : A -> t A B C
   | Err : B -> t A B C
-  | Mon : C -> t A B C.
+  | Com : C -> t A B C.
 
   Arguments Val {A B C} _.
   Arguments Err {A B C} _.
-  Arguments Mon {A B C} _.
+  Arguments Com {A B C} _.
 End Result.
 
 Import Result.
@@ -40,7 +40,7 @@ Fixpoint bind {S E A B} (x : C.t S E A) (f : A -> C.t S E B) : C.t S E B :=
     match r with
     | Val x => C.open (f x) s'
     | Err e => (Err e, s')
-    | Mon x => (Mon (bind x f), s')
+    | Com x => (Com (bind x f), s')
     end).
 
 Module Notations.
@@ -86,7 +86,7 @@ Fixpoint eval {S E A} (x : C.t S E A) (s : S) : (A + E) * S :=
   match C.open x s with
   | (Val x, s) => (inl x, s)
   | (Err e, s) => (inr e, s)
-  | (Mon x, s) => eval x s
+  | (Com x, s) => eval x s
   end.
 
 (** Augment the state. *)
@@ -96,7 +96,7 @@ Fixpoint lift_state {S1 S2 E A} (x : C.t S1 E A) : C.t (S1 * S2) E A :=
     match C.open x s1 with
     | (Val x, s1) => (Val x, (s1, s2))
     | (Err e, s1) => (Err e, (s1, s2))
-    | (Mon x, s1) => (Mon (lift_state x), (s1, s2))
+    | (Com x, s1) => (Com (lift_state x), (s1, s2))
     end).
 
 (** Apply an isomorphism to the state. *)
@@ -108,7 +108,7 @@ Fixpoint map_state {S1 S2 E A} (f : S1 -> S2) (g : S2 -> S1) (x : C.t S1 E A)
     (match r with
     | Val x => Val x
     | Err e => Err e
-    | Mon x => Mon (map_state f g x)
+    | Com x => Com (map_state f g x)
     end, f s1)).
 
 Module Option.
@@ -204,16 +204,16 @@ Module Concurrency.
           if b then
             let (r, ss) := C.open x (s, bs) in
             (match r with
-            | Val x => Mon (let! y := y in ret (x, y))
+            | Val x => Com (let! y := y in ret (x, y))
             | Err e => Err e
-            | Mon x => Mon (par x y)
+            | Com x => Com (par x y)
             end, ss)
           else
             let (r, ss) := C.open y (s, bs) in
             (match r with
-            | Val y => Mon (let! x := x in ret (x, y))
+            | Val y => Com (let! x := x in ret (x, y))
             | Err e => Err e
-            | Mon y => Mon (par_aux y)
+            | Com y => Com (par_aux y)
             end, ss)
         end) in
     C.New (fun (s : S * Entropy.t) =>
@@ -222,16 +222,16 @@ Module Concurrency.
         if b then
           let (r, ss) := C.open x (s, bs) in
           (match r with
-          | Val x => Mon (let! y := y in ret (x, y))
+          | Val x => Com (let! y := y in ret (x, y))
           | Err e => Err e
-          | Mon x => Mon (par x y)
+          | Com x => Com (par x y)
           end, ss)
         else
           let (r, ss) := C.open y (s, bs) in
           (match r with
-          | Val y => Mon (let! x := x in ret (x, y))
+          | Val y => Com (let! x := x in ret (x, y))
           | Err e => Err e
-          | Mon y => Mon (par_aux y)
+          | Com y => Com (par_aux y)
           end, ss)
       end).
 
@@ -245,7 +245,7 @@ Module Concurrency.
     C.New (fun (s : S) =>
       match C.open x s with
       | (Val _, _) as y | (Err _, _) as y => y
-      | (Mon x, s) => C.open (atomic x) s
+      | (Com x, s) => C.open (atomic x) s
       end).
 End Concurrency.
 
@@ -274,7 +274,7 @@ Module Event.
   Definition loop_seq {S E A} (f : A -> C.t S E unit) : C.t (S * t A) E unit :=
     C.New (fun (s : S * t A) =>
       let (s, events) := s in
-      (Mon (lift_state (List.iter_seq f events)), (s, []))).
+      (Com (lift_state (List.iter_seq f events)), (s, []))).
 
   Definition loop_par {S E A} (f : A -> C.t (S * Entropy.t) E unit)
     : C.t (S * t A * Entropy.t) E unit :=
@@ -287,7 +287,7 @@ Module Event.
           (fun ss => match ss with (s1, s2, s3) => (s1, s3, s2) end)
           (fun ss => match ss with (s1, s2, s3) => (s1, s3, s2) end)
           c in
-        (Mon c, (s, [], entropy))
+        (Com c, (s, [], entropy))
       end).
 
   Module Test.

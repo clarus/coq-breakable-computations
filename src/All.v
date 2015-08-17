@@ -470,9 +470,20 @@ Module Test.
       | (_, ui_outputs, server_outputs, _, _) => (ui_outputs, server_outputs)
       end.
 
-    Compute eval_handle_ui [] Entropy.left.
-    Compute eval_handle_ui [UiInput.Add "task1"; UiInput.Add "task2"] Entropy.left.
-    Compute eval_handle_ui [UiInput.Add "task1"; UiInput.Add "task2"] Entropy.right.
+    Definition test_ui_1 : eval_handle_ui [] Entropy.left = ([], []) :=
+      eq_refl.
+
+    Definition test_ui_2 :
+      eval_handle_ui [UiInput.Add "task1"; UiInput.Add "task2"] Entropy.left =
+        ([UiOutput.Make ["task2"; "task1"]; UiOutput.Make ["task1"]],
+        [ServerOutput.Make ["task2"; "task1"]; ServerOutput.Make ["task1"]]) :=
+      eq_refl.
+
+    Definition test_ui_3 :
+      eval_handle_ui [UiInput.Add "task1"; UiInput.Add "task2"] Entropy.right =
+        ([UiOutput.Make ["task1"; "task2"]; UiOutput.Make ["task2"]],
+        [ServerOutput.Make ["task1"; "task2"]; ServerOutput.Make ["task2"]]) :=
+      eq_refl.
 
     (** Handle an event from the server. *)
     Definition handle_server (event : ServerInput.t)
@@ -489,9 +500,18 @@ Module Test.
       | (_, outputs, _, _) => outputs
       end.
 
-    Compute eval_handle_server [] Entropy.left.
-    Compute eval_handle_server [ServerInput.Make ["task1"]; ServerInput.Make ["task2"]] Entropy.left.
-    Compute eval_handle_server [ServerInput.Make ["task1"]; ServerInput.Make ["task2"]] Entropy.right.
+    Definition test_server_1 : eval_handle_server [] Entropy.left = [] :=
+      eq_refl.
+
+    Definition test_server_2 :
+      eval_handle_server [ServerInput.Make ["task1"]; ServerInput.Make ["task2"]] Entropy.left =
+        [UiOutput.Make ["task2"]; UiOutput.Make ["task1"]] :=
+      eq_refl.
+
+    Definition test_server_3 :
+      eval_handle_server [ServerInput.Make ["task1"]; ServerInput.Make ["task2"]] Entropy.right =
+        [UiOutput.Make ["task1"]; UiOutput.Make ["task2"]] :=
+      eq_refl.
 
     Definition lifted_handle_server (event : ServerInput.t)
       : C.t (Model.t * Log.t UiOutput.t * Log.t ServerOutput.t * Entropy.t) Empty_set unit :=
@@ -526,15 +546,72 @@ Module Test.
       | (_, ui_outputs, server_outputs, _, _, _) => (ui_outputs, server_outputs)
       end.
 
-    Compute eval [] [] (Entropy.random 12).
-    Compute eval [UiInput.Add "task1"] [] (Entropy.random 12).
-    Compute eval [UiInput.Add "task1"; UiInput.Add "task2"] [] Entropy.left.
-    Compute eval [UiInput.Add "task1"; UiInput.Add "task2"] [] Entropy.right.
-    Compute eval [UiInput.Add "task1"; UiInput.Add "task2"; UiInput.Add "task3"] [] Entropy.left.
-    Compute eval [UiInput.Add "task1"; UiInput.Add "task2"; UiInput.Add "task3"] [] Entropy.right.
-    Compute eval [UiInput.Add "task1"; UiInput.Add "task2"; UiInput.Add "task3"] [] (Entropy.random 10).
-    Compute eval [UiInput.Add "task1"; UiInput.Add "task2"] [ServerInput.Make ["task3"]] Entropy.left.
-    Compute eval [UiInput.Add "task1"; UiInput.Add "task2"] [ServerInput.Make ["task3"]] Entropy.right.
-    Compute eval [UiInput.Add "task1"; UiInput.Add "task2"] [ServerInput.Make ["task3"]] (Entropy.random 10).
+    Definition test_1 :
+      eval [] [] (Entropy.random 12) = ([], []) :=
+      eq_refl.
+
+    Definition test_2 :
+      eval [UiInput.Add "task1"] [] (Entropy.random 12) =
+        ([UiOutput.Make ["task1"]], [ServerOutput.Make ["task1"]]) :=
+      eq_refl.
+
+    Definition test_3 :
+      eval [UiInput.Add "task1"; UiInput.Add "task2"] [] Entropy.left =
+        ([UiOutput.Make ["task2"; "task1"]; UiOutput.Make ["task1"]],
+        [ServerOutput.Make ["task2"; "task1"]; ServerOutput.Make ["task1"]]) :=
+      eq_refl.
+
+    Definition test_4 :
+      eval [UiInput.Add "task1"; UiInput.Add "task2"] [] Entropy.right =
+        ([UiOutput.Make ["task1"; "task2"]; UiOutput.Make ["task2"]],
+        [ServerOutput.Make ["task1"; "task2"]; ServerOutput.Make ["task2"]]) :=
+      eq_refl.
+
+    Definition test_5 :
+      eval [UiInput.Add "task1"; UiInput.Add "task2"; UiInput.Add "task3"] [] Entropy.left =
+        ([UiOutput.Make ["task3"; "task2"; "task1"];
+          UiOutput.Make ["task2"; "task1"]; UiOutput.Make ["task1"]],
+        [ServerOutput.Make ["task3"; "task2"; "task1"];
+          ServerOutput.Make ["task2"; "task1"]; ServerOutput.Make ["task1"]]) :=
+      eq_refl.
+
+    Definition test_6 :
+      eval [UiInput.Add "task1"; UiInput.Add "task2"; UiInput.Add "task3"] [] Entropy.right =
+        ([UiOutput.Make ["task1"; "task2"; "task3"];
+          UiOutput.Make ["task2"; "task3"]; UiOutput.Make ["task3"]],
+        [ServerOutput.Make ["task1"; "task2"; "task3"];
+          ServerOutput.Make ["task2"; "task3"]; ServerOutput.Make ["task3"]]) :=
+      eq_refl.
+
+    Definition test_7 :
+      eval [UiInput.Add "task1"; UiInput.Add "task2"; UiInput.Add "task3"] [] (Entropy.random 10) =
+        ([UiOutput.Make ["task2"; "task1"; "task3"];
+          UiOutput.Make ["task1"; "task3"]; UiOutput.Make ["task3"]],
+        [ServerOutput.Make ["task2"; "task1"; "task3"];
+          ServerOutput.Make ["task3"]; ServerOutput.Make ["task1"; "task3"]]) :=
+      eq_refl.
+
+    Definition test_8 :
+      eval [UiInput.Add "task1"; UiInput.Add "task2"] [ServerInput.Make ["task3"]] Entropy.left =
+        ([UiOutput.Make ["task3"]; UiOutput.Make ["task2"; "task1"];
+          UiOutput.Make ["task1"]],
+        [ServerOutput.Make ["task2"; "task1"]; ServerOutput.Make ["task1"]]) :=
+      eq_refl.
+
+    Definition test_9 :
+      eval [UiInput.Add "task1"; UiInput.Add "task2"] [ServerInput.Make ["task3"]] Entropy.right =
+        ([UiOutput.Make ["task1"; "task2"; "task3"];
+          UiOutput.Make ["task2"; "task3"]; UiOutput.Make ["task3"]],
+        [ServerOutput.Make ["task1"; "task2"; "task3"];
+          ServerOutput.Make ["task2"; "task3"]]) :=
+      eq_refl.
+
+    Definition test_10 :
+      eval [UiInput.Add "task1"; UiInput.Add "task2"] [ServerInput.Make ["task3"]] (Entropy.random 10) =
+        ([UiOutput.Make ["task1"; "task3"]; UiOutput.Make ["task1"; "task3"];
+          UiOutput.Make ["task1"; "task3"]],
+        [ServerOutput.Make ["task1"; "task3"];
+          ServerOutput.Make ["task1"; "task3"]]) :=
+      eq_refl.
   End TodoManager.
 End Test.

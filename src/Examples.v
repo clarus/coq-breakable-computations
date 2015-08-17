@@ -3,6 +3,7 @@ Require Import Coq.Strings.String.
 Require Import Main.
 
 Import ListNotations.
+Import Main.Notations.
 Local Open Scope string_scope.
 
 Definition eval_seq (x : C.t (list nat) Empty_set unit) : list nat :=
@@ -60,8 +61,8 @@ Module PrintList.
     eq_refl.
 
   Definition test_7 : eval_par (two_prints_par 12) (Entropy.random 0) = [
-    0; 1; 2; 3; 4; 5; 6; 7; 8; 0; 9; 10; 1; 11; 2; 12; 13; 3; 4; 14; 15;
-    5; 16; 17; 6; 18; 19; 20; 7; 8; 9; 21; 22; 23; 10; 11] :=
+    0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11; 12; 13; 14; 15; 16; 17; 18; 19;
+    20; 21; 22; 23; 0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11] :=
     eq_refl.
 End PrintList.
 
@@ -317,7 +318,8 @@ Module TodoManager.
       ([UiOutput.Make ["task2"; "task1"; "task3"];
         UiOutput.Make ["task1"; "task3"]; UiOutput.Make ["task3"]],
       [ServerOutput.Make ["task2"; "task1"; "task3"];
-        ServerOutput.Make ["task3"]; ServerOutput.Make ["task1"; "task3"]]) :=
+        ServerOutput.Make ["task1"; "task3"];
+        ServerOutput.Make ["task1"; "task3"]]) :=
     eq_refl.
 
   Definition test_8 :
@@ -337,9 +339,8 @@ Module TodoManager.
 
   Definition test_10 :
     eval [UiInput.Add "task1"; UiInput.Add "task2"] [ServerInput.Make ["task3"]] (Entropy.random 10) =
-      ([UiOutput.Make ["task1"; "task3"]; UiOutput.Make ["task1"; "task3"];
-        UiOutput.Make ["task1"; "task3"]],
-      [ServerOutput.Make ["task1"; "task3"];
-        ServerOutput.Make ["task1"; "task3"]]) :=
+      ([UiOutput.Make ["task1"; "task3"]; UiOutput.Make ["task3"];
+        UiOutput.Make ["task2"]],
+      [ServerOutput.Make ["task1"; "task3"]; ServerOutput.Make ["task2"]]) :=
     eq_refl.
 End TodoManager.

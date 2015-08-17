@@ -55,8 +55,8 @@ Module PrintList.
     eq_refl.
 
   Definition test_6 : eval_par (two_prints_par 12) Entropy.half = [
-    0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11; 12; 0; 13; 1; 14; 2; 15; 3; 16;
-    4; 17; 5; 18; 6; 19; 7; 20; 8; 21; 9; 22; 10; 23; 11] :=
+    0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11; 12; 13; 14; 15; 16; 17; 18; 19;
+    20; 21; 22; 23; 0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11] :=
     eq_refl.
 
   Definition test_7 : eval_par (two_prints_par 12) (Entropy.random 0) = [

@@ -13,6 +13,15 @@ Module Result.
   Arguments Val {A B C} _.
   Arguments Err {A B C} _.
   Arguments Mon {A B C} _.
+
+  Module Eq.
+    Inductive t {A B C}
+      (eq_A : A -> A -> Prop) (eq_B : B -> B -> Prop) (eq_C : C -> C -> Prop)
+      : t A B C -> t A B C -> Prop :=
+    | Val : forall a1 a2, eq_A a1 a2 -> t eq_A eq_B eq_C (Val a1) (Val a2)
+    | Err : forall b1 b2, eq_B b1 b2 -> t eq_A eq_B eq_C (Err b1) (Err b2)
+    | Mon : forall c1 c2, eq_C c1 c2 -> t eq_A eq_B eq_C (Mon c1) (Mon c2).
+  End Eq.
 End Result.
 
 Import Result.
@@ -37,13 +46,44 @@ Definition ret {S E A} (x : A) : C.t S E A :=
 Fixpoint bind {S E A B} (x : C.t S E A) (f : A -> C.t S E B) : C.t S E B :=
   C.New (fun s =>
     match C.open x s with
-    | (Val x, s) => (Mon (f x), s)
+    | (Val x, s) => C.open (f x) s
     | (Err e, s) => (Err e, s)
     | (Mon x, s) => (Mon (bind x f), s)
     end).
 
 Notation "'let!' X ':=' A 'in' B" := (bind A (fun X => B))
   (at level 200, X ident, A at level 100, B at level 200).
+
+Module Eq.
+  Inductive t {S E A} (x1 : C.t S E A) (x2 : C.t S E A) : Prop :=
+  | Intro : (forall s, Result.Eq.t eq eq eq (C.open x1 s) (C.open x2 s)) -> t x1 x2.
+End Eq.
+
+Module MonadicLaw.
+  Definition ret_left {S E A B} (x : A) (f : A -> C.t S E B)
+    : bind (ret x) f = f x.
+    simpl; destruct (f x).
+    reflexivity.
+  Qed.
+
+  (*Fixpoint ret_right {S E A} (x : C.t S E A) {struct x}
+    : bind x ret = x.
+    destruct x.
+    simpl.
+  Qed.*)
+
+  Fixpoint ret_right {S E A} (x : C.t S E A) (s : S) {struct x}
+    : C.open (bind x ret) s = C.open x s.
+    destruct x as [x']; simpl; destruct x' as [r s'].
+    destruct r as [v | e | x].
+    - reflexivity.
+    - reflexivity.
+    - rewrite ret_right.
+    simpl.
+    simpl; destruct (C.open x s) as [r s'].
+    simpl.
+  Qed.
+End MonadicLaw.
 
 (** Raw evaluation. *)
 Fixpoint eval {S E A} (x : C.t S E A) (s : S) : (A + E) * S :=

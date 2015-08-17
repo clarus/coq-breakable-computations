@@ -4,17 +4,15 @@ Require Import Coq.Lists.Streams.
 
 Import ListNotations.
 
-Set Implicit Arguments.
-
 Module Result.
   Inductive t (A B C : Type) : Type :=
   | Val : A -> t A B C
   | Err : B -> t A B C
   | Mon : C -> t A B C.
 
-  Arguments Val [A] [B] [C] _.
-  Arguments Err [A] [B] [C] _.
-  Arguments Mon [A] [B] [C] _.
+  Arguments Val {A B C} _.
+  Arguments Err {A B C} _.
+  Arguments Mon {A B C} _.
 End Result.
 
 Import Result.
@@ -23,8 +21,9 @@ Import Result.
 Module C.
   Inductive t (S : Type) (E : Type) (A : Type) : Type :=
   | make : (S -> Result.t A E (t S E A) * S) -> t S E A.
+  Arguments make {S E A} _.
 
-  Definition open S E A (x : t S E A) :=
+  Definition open {S E A} (x : t S E A) :=
     match x with
     | make x' => x'
     end.
@@ -35,7 +34,7 @@ Definition ret {S E A} (x : A) : C.t S E A :=
   C.make (fun s => (Val x, s)).
 
 (** Monadic bind. *)
-Fixpoint bind S E A B (x : C.t S E A) (f : A -> C.t S E B) : C.t S E B :=
+Fixpoint bind {S E A B} (x : C.t S E A) (f : A -> C.t S E B) : C.t S E B :=
   C.make (fun s =>
     match C.open x s with
     | (Val x, s) => (Mon (f x), s)
@@ -47,7 +46,7 @@ Notation "'let!' X ':=' A 'in' B" := (bind A (fun X => B))
   (at level 200, X ident, A at level 100, B at level 200).
 
 (** Raw evaluation. *)
-Fixpoint eval S E A (x : C.t S E A) (s : S) : (A + E) * S :=
+Fixpoint eval {S E A} (x : C.t S E A) (s : S) : (A + E) * S :=
   match C.open x s with
   | (Val x, s) => (inl x, s)
   | (Err e, s) => (inr e, s)
@@ -55,17 +54,17 @@ Fixpoint eval S E A (x : C.t S E A) (s : S) : (A + E) * S :=
   end.
 
 (** Augment the state. *)
-Fixpoint lift_state S1 S2 E A (x : C.t S1 E A) : @C.t (S1 * S2) E A :=
+Fixpoint lift_state {S1 S2 E A} (x : C.t S1 E A) : C.t (S1 * S2) E A :=
   C.make (fun (s : S1 * S2) =>
     let (s1, s2) := s in
     match C.open x s1 with
     | (Val x, s1) => (Val x, (s1, s2))
     | (Err e, s1) => (Err e, (s1, s2))
-    | (Mon x, s1) => (Mon (lift_state _ x), (s1, s2))
+    | (Mon x, s1) => (Mon (lift_state x), (s1, s2))
     end).
 
 (** Apply an isomorphism to the state. *)
-Fixpoint map_state S1 S2 E A (f : S1 -> S2) (g : S2 -> S1) (x : C.t S1 E A)
+Fixpoint map_state {S1 S2 E A} (f : S1 -> S2) (g : S2 -> S1) (x : C.t S1 E A)
   : C.t S2 E A :=
   C.make (fun (s2 : S2) =>
     let s1 := g s2 in
@@ -77,27 +76,27 @@ Fixpoint map_state S1 S2 E A (f : S1 -> S2) (g : S2 -> S1) (x : C.t S1 E A)
     end, f s1)).
 
 Module Option.
-  Definition none A : C.t unit unit A :=
+  Definition none {A} : C.t unit unit A :=
     C.make (fun _ => (Err tt, tt)).
 End Option.
 
 Module Error.
-  Definition raise E A (e : E) : C.t unit E A :=
+  Definition raise {E A} (e : E) : C.t unit E A :=
     C.make (fun _ => (Err e, tt)).
 End Error.
 
 Module Log.
   Definition t := list.
 
-  Definition log A (x : A) : C.t (t A) Empty_set unit :=
+  Definition log {A} (x : A) : C.t (t A) Empty_set unit :=
     C.make (fun s => (Val tt, x :: s)).
 End Log.
 
 Module State.
-  Definition read (S : Type) (_ : unit) : C.t S Empty_set S :=
+  Definition read {S : Type} (_ : unit) : C.t S Empty_set S :=
     C.make (fun s => (Val s, s)).
 
-  Definition write (S : Type) (x : S) : C.t S Empty_set unit :=
+  Definition write {S : Type} (x : S) : C.t S Empty_set unit :=
     C.make (fun _ => (Val tt, x)).
 End State.
 
@@ -127,7 +126,7 @@ Module Entropy.
     Streams.map (fun n => N.even (N.div n 64)) (random_naturals seed).
 
   Module Test.
-    Fixpoint hds A (n : nat) (e : Stream A) : list A :=
+    Fixpoint hds {A} (n : nat) (e : Stream A) : list A :=
       match n with
       | O => []
       | S n => Streams.hd e :: hds n (Streams.tl e)
@@ -157,7 +156,7 @@ End Entropy.
 
 Module Concurrency.
   (** Executes [x] and [y] concurrently, using a boolean stream as source of entropy. *)
-  Fixpoint par S E A B
+  Fixpoint par {S E A B}
     (x : C.t (S * Entropy.t) E A) (y : C.t (S * Entropy.t) E B) {struct x}
     : C.t (S * Entropy.t) E (A * B) :=
     let fix par_aux y {struct y} : C.t (S * Entropy.t) E (A * B) :=
@@ -198,13 +197,13 @@ Module Concurrency.
           end, ss)
       end).
 
-  Definition par_unit S E (x : C.t (S * Entropy.t) E unit) (y : C.t (S * Entropy.t) E unit)
+  Definition par_unit {S E} (x : C.t (S * Entropy.t) E unit) (y : C.t (S * Entropy.t) E unit)
     : C.t (S * Entropy.t) E unit :=
     let! _ := par x y in
     ret tt.
 
   (** Make [x] atomic. *)
-  Fixpoint atomic S E A (x : C.t S E A) : C.t S E A :=
+  Fixpoint atomic {S E A} (x : C.t S E A) : C.t S E A :=
     C.make (fun (s : S) =>
       match C.open x s with
       | (Val _, _) as y | (Err _, _) as y => y
@@ -213,7 +212,7 @@ Module Concurrency.
 End Concurrency.
 
 Module List.
-  Fixpoint iter_seq S E A (f : A -> C.t S E unit) (l : list A) : C.t S E unit :=
+  Fixpoint iter_seq {S E A} (f : A -> C.t S E unit) (l : list A) : C.t S E unit :=
     match l with
     | [] => ret tt
     | x :: l =>
@@ -221,7 +220,7 @@ Module List.
       iter_seq f l
     end.
 
-  Fixpoint iter_par S E A (f : A -> C.t (S * Entropy.t) E unit) (l : list A)
+  Fixpoint iter_par {S E A} (f : A -> C.t (S * Entropy.t) E unit) (l : list A)
     : C.t (S * Entropy.t) E unit :=
     match l with
     | [] => ret tt
@@ -232,18 +231,18 @@ End List.
 Module Event.
   Definition t := list.
 
-  Definition loop_seq S E A (f : A -> C.t S E unit) : C.t (S * t A) E unit :=
+  Definition loop_seq {S E A} (f : A -> C.t S E unit) : C.t (S * t A) E unit :=
     C.make (fun (s : S * t A) =>
       let (s, events) := s in
-      (Mon (lift_state (t A) (List.iter_seq f events)), (s, []))).
+      (Mon (lift_state (List.iter_seq f events)), (s, []))).
 
-  Definition loop_par S E A (f : A -> C.t (S * Entropy.t) E unit)
+  Definition loop_par {S E A} (f : A -> C.t (S * Entropy.t) E unit)
     : C.t (S * t A * Entropy.t) E unit :=
     C.make (fun (s : S * t A * Entropy.t) =>
       match s with
       | (s, events, entropy) =>
         let c := List.iter_par f events in
-        let c := lift_state (t A) c in
+        let c := lift_state c in
         let c := map_state
           (fun ss => match ss with (s1, s2, s3) => (s1, s3, s2) end)
           (fun ss => match ss with (s1, s2, s3) => (s1, s3, s2) end)
@@ -254,7 +253,7 @@ Module Event.
   Module Test.
     Definition log_all (_ : unit) : C.t (Log.t nat * t nat * Entropy.t) Empty_set unit :=
       loop_par (fun n =>
-        lift_state _ (Log.log n)).
+        lift_state (Log.log n)).
 
     Definition eval (inputs : list nat) (entropy : Entropy.t) : list nat :=
       match snd (eval (log_all tt) ([], inputs, entropy)) with

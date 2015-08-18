@@ -54,32 +54,24 @@ Module Eq.
 End Eq.
 
 Module MonadicLaw.
-  (*Definition extensionality : Prop :=
-    forall (S E A : Type) (x1 x2 : C.t S E A),
-      (forall (s : S), C.body x1 s = C.body x2 s) -> x1 = x2.*)
-
   Definition neutral_left {S E A B} (x : A) (f : A -> C.t S E B)
-    : bind (ret x) f = f x.
-    reflexivity.
+    : Eq.t (bind (ret x) f) (f x).
+    apply Eq.reflexivity.
   Qed.
 
   Fixpoint neutral_right {S E A} (x : C.t S E A)
     : Eq.t (bind x ret) x.
-    destruct x as [v | e | xs ss]; simpl.
-    - apply Eq.Value.
-    - apply Eq.Error.
-    - apply Eq.Break.
-      intro s; apply neutral_right.
+    destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
+    apply Eq.Break; intro s.
+    apply neutral_right.
   Qed.
 
-  Fixpoint associativity (H : extensionality) {S E A B C}
+  Fixpoint associativity {S E A B C}
     (x : C.t S E A) (f : A -> C.t S E B) (g : B -> C.t S E C) {struct x}
-    : bind (bind x f) g = bind x (fun x => bind (f x) g).
-    apply H; intro s.
-    destruct x as [x']; simpl; destruct (x' s) as [v | e | [x s']].
-    - destruct (f v); reflexivity.
-    - reflexivity.
-    - now rewrite associativity.
+    : Eq.t (bind (bind x f) g) (bind x (fun x => bind (f x) g)).
+    destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
+    apply Eq.Break; intro s.
+    apply associativity.
   Qed.
 End MonadicLaw.
 

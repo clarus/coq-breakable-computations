@@ -20,27 +20,26 @@ Import Result.
 (** Definition of a computation. *)
 Module C.
   Inductive t (S : Type) (E : Type) (A : Type) : Type :=
-  | New : (S -> Result.t A E (t S E A) * S) -> t S E A.
+  | New : (S -> Result.t A E (t S E A * S)) -> t S E A.
   Arguments New {S E A} _.
 
-  Definition open {S E A} (x : t S E A) :=
+  Definition body {S E A} (x : t S E A) :=
     match x with
     | New x' => x'
     end.
 End C.
 
 (** Monadic return. *)
-Definition ret {S E A} (x : A) : C.t S E A :=
-  C.New (fun s => (Val x, s)).
+Definition ret {S E A} (v : A) : C.t S E A :=
+  C.New (fun s => Val v).
 
 (** Monadic bind. *)
 Fixpoint bind {S E A B} (x : C.t S E A) (f : A -> C.t S E B) : C.t S E B :=
   C.New (fun s =>
-    let (r, s') := C.open x s in
-    match r with
-    | Val x => C.open (f x) s'
-    | Err e => (Err e, s')
-    | Com x => (Com (bind x f), s')
+    match C.body x s with
+    | Val v => C.body (f v) s
+    | Err e => Err e
+    | Com (x, s') => Com (bind x f, s')
     end).
 
 Module Notations.
@@ -51,52 +50,50 @@ End Notations.
 Module MonadicLaw.
   Definition extensionality : Prop :=
     forall (S E A : Type) (x1 x2 : C.t S E A),
-      (forall (s : S), C.open x1 s = C.open x2 s) -> x1 = x2.
+      (forall (s : S), C.body x1 s = C.body x2 s) -> x1 = x2.
 
-  Definition ret_left {S E A B} (x : A) (f : A -> C.t S E B)
+  Definition neutral_left {S E A B} (x : A) (f : A -> C.t S E B)
     : bind (ret x) f = f x.
     simpl; destruct (f x).
     reflexivity.
   Qed.
 
-  Fixpoint ret_right (H : extensionality) {S E A} (x : C.t S E A)
+  Fixpoint neutral_right (H : extensionality) {S E A} (x : C.t S E A)
     : bind x ret = x.
     apply H; intro s.
-    destruct x as [x']; simpl; destruct x' as [r s'].
-    destruct r as [v | e | x].
+    destruct x as [x']; simpl; destruct (x' s) as [v | e | [x s']].
     - reflexivity.
     - reflexivity.
-    - now rewrite ret_right.
+    - now rewrite neutral_right.
   Qed.
 
-  Fixpoint bind_compose (H : extensionality) {S E A B C}
+  Fixpoint associativity (H : extensionality) {S E A B C}
     (x : C.t S E A) (f : A -> C.t S E B) (g : B -> C.t S E C) {struct x}
     : bind (bind x f) g = bind x (fun x => bind (f x) g).
     apply H; intro s.
-    destruct x as [x']; simpl; destruct x' as [r s'].
-    destruct r as [v | e | x].
+    destruct x as [x']; simpl; destruct (x' s) as [v | e | [x s']].
     - destruct (f v); reflexivity.
     - reflexivity.
-    - now rewrite bind_compose.
+    - now rewrite associativity.
   Qed.
 End MonadicLaw.
 
 (** Raw evaluation. *)
 Fixpoint eval {S E A} (x : C.t S E A) (s : S) : (A + E) * S :=
-  match C.open x s with
-  | (Val x, s) => (inl x, s)
-  | (Err e, s) => (inr e, s)
-  | (Com x, s) => eval x s
+  match C.body x s with
+  | Val x => (inl x, s)
+  | Err e => (inr e, s)
+  | Com (x, s) => eval x s
   end.
 
 (** Augment the state. *)
 Fixpoint lift_state {S1 S2 E A} (x : C.t S1 E A) : C.t (S1 * S2) E A :=
   C.New (fun (s : S1 * S2) =>
     let (s1, s2) := s in
-    match C.open x s1 with
-    | (Val x, s1) => (Val x, (s1, s2))
-    | (Err e, s1) => (Err e, (s1, s2))
-    | (Com x, s1) => (Com (lift_state x), (s1, s2))
+    match C.body x s1 with
+    | Val x => Val x
+    | Err e => Err e
+    | Com (x, s1) => Com (lift_state x, (s1, s2))
     end).
 
 (** Apply an isomorphism to the state. *)
@@ -104,21 +101,20 @@ Fixpoint map_state {S1 S2 E A} (f : S1 -> S2) (g : S2 -> S1) (x : C.t S1 E A)
   : C.t S2 E A :=
   C.New (fun (s2 : S2) =>
     let s1 := g s2 in
-    let (r, s1) := C.open x s1 in
-    (match r with
+    match C.body x s1 with
     | Val x => Val x
     | Err e => Err e
-    | Com x => Com (map_state f g x)
-    end, f s1)).
+    | Com (x, s1) => Com (map_state f g x, f s1)
+    end).
 
 Module Option.
   Definition none {A} : C.t unit unit A :=
-    C.New (fun _ => (Err tt, tt)).
+    C.New (fun _ => Err tt).
 End Option.
 
 Module Error.
   Definition raise {E A} (e : E) : C.t unit E A :=
-    C.New (fun _ => (Err e, tt)).
+    C.New (fun _ => Err e).
 End Error.
 
 Module Log.
@@ -202,14 +198,14 @@ Module Concurrency.
         match s with
         | (s, Streams.Cons b bs) =>
           if b then
-            let (r, ss) := C.open x (s, bs) in
+            let (r, ss) := C.body x (s, bs) in
             (match r with
             | Val x => Com (let! y := y in ret (x, y))
             | Err e => Err e
             | Com x => Com (par x y)
             end, ss)
           else
-            let (r, ss) := C.open y (s, bs) in
+            let (r, ss) := C.body y (s, bs) in
             (match r with
             | Val y => Com (let! x := x in ret (x, y))
             | Err e => Err e
@@ -220,14 +216,14 @@ Module Concurrency.
       match s with
       | (s, Streams.Cons b bs) =>
         if b then
-          let (r, ss) := C.open x (s, bs) in
+          let (r, ss) := C.body x (s, bs) in
           (match r with
           | Val x => Com (let! y := y in ret (x, y))
           | Err e => Err e
           | Com x => Com (par x y)
           end, ss)
         else
-          let (r, ss) := C.open y (s, bs) in
+          let (r, ss) := C.body y (s, bs) in
           (match r with
           | Val y => Com (let! x := x in ret (x, y))
           | Err e => Err e
@@ -243,9 +239,9 @@ Module Concurrency.
   (** Make [x] atomic. *)
   Fixpoint atomic {S E A} (x : C.t S E A) : C.t S E A :=
     C.New (fun (s : S) =>
-      match C.open x s with
+      match C.body x s with
       | (Val _, _) as y | (Err _, _) as y => y
-      | (Com x, s) => C.open (atomic x) s
+      | (Com x, s) => C.body (atomic x) s
       end).
 End Concurrency.
 

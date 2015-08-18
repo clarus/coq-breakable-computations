@@ -18,12 +18,12 @@ Module PrintList.
     match n with
     | O => ret tt
     | S n =>
-      let! _ := Log.log n in
+      do! Log.log n in
       print_before n
     end.
 
   Definition two_prints_seq (n : nat) : C.t (Log.t nat) Empty_set unit :=
-    let! _ := print_before n in
+    do! print_before n in
     print_before (2 * n).
 
   Definition print_before_par (n : nat) : C.t (Log.t nat * Entropy.t) Empty_set unit :=
@@ -56,13 +56,13 @@ Module PrintList.
     eq_refl.
 
   Definition test_6 : eval_par (two_prints_par 12) Entropy.half = [
-    0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11; 12; 13; 14; 15; 16; 17; 18; 19;
-    20; 21; 22; 23; 0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11] :=
+    0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11; 12; 0; 13; 1; 14; 2; 15; 3; 16;
+    4; 17; 5; 18; 6; 19; 7; 20; 8; 21; 9; 22; 10; 23; 11] :=
     eq_refl.
 
   Definition test_7 : eval_par (two_prints_par 12) (Entropy.random 0) = [
-    0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11; 12; 13; 14; 15; 16; 17; 18; 19;
-    20; 21; 22; 23; 0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11] :=
+    0; 1; 2; 3; 4; 5; 6; 7; 8; 0; 9; 10; 1; 11; 2; 12; 13; 3; 4; 14; 15;
+    5; 16; 17; 6; 18; 19; 20; 7; 8; 9; 21; 22; 23; 10; 11] :=
     eq_refl.
 End PrintList.
 
@@ -90,7 +90,7 @@ Module ListOfPrints.
     eq_refl.
 
   Definition test_4 : eval_par (print_seq_par 10 20) (Entropy.random 12) = [
-    24; 28; 29; 22; 27; 25; 26; 21; 20; 23; 16; 19; 17; 18; 15; 14; 13;
+    28; 26; 27; 23; 25; 24; 29; 20; 22; 21; 16; 18; 19; 17; 13; 14; 15;
     12; 11; 10] :=
     eq_refl.
 End ListOfPrints.
@@ -129,28 +129,28 @@ Module TodoManager.
 
     Definition add (task : string) : C.t Model.t Empty_set unit :=
       Concurrency.atomic (
-        let! model := State.read tt in
+        let! model := State.read in
         match model with
         | Model.Make tasks => State.write (Model.Make (task :: tasks))
         end).
 
     Definition remove (id : nat) : C.t Model.t Empty_set unit :=
       Concurrency.atomic (
-        let! model := State.read tt in
+        let! model := State.read in
         match model with
         | Model.Make tasks => State.write (Model.Make tasks) (* TODO *)
         end).
 
-    Definition get (_ : unit) : C.t Model.t Empty_set Model.t :=
-      State.read tt.
+    Definition get : C.t Model.t Empty_set Model.t :=
+      State.read.
 
     Definition set (model : t) : C.t Model.t Empty_set unit :=
       State.write model.
   End Model.
 
   (** Send an update to the UI system. *)
-  Definition push_ui (_ : unit) : C.t (Model.t * Log.t UiOutput.t) Empty_set unit :=
-    let! model := lift_state (Model.get tt) in
+  Definition push_ui : C.t (Model.t * Log.t UiOutput.t) Empty_set unit :=
+    let! model := lift_state Model.get in
     match model with
     | Model.Make tasks =>
       map_state
@@ -160,8 +160,8 @@ Module TodoManager.
     end.
 
   (** Send an update to the server. *)
-  Definition push_server (_ : unit) : C.t (Model.t * Log.t ServerOutput.t) Empty_set unit :=
-    let! model := lift_state (Model.get tt) in
+  Definition push_server : C.t (Model.t * Log.t ServerOutput.t) Empty_set unit :=
+    let! model := lift_state Model.get in
     match model with
     | Model.Make tasks =>
       map_state
@@ -171,13 +171,13 @@ Module TodoManager.
     end.
 
   (** Update the UI and the server. *)
-  Definition broadcast_model (_ : unit)
+  Definition broadcast_model
     : C.t (Model.t * Log.t UiOutput.t * Log.t ServerOutput.t * Entropy.t) Empty_set unit :=
-    let c_ui := lift_state (lift_state (push_ui tt)) in
+    let c_ui := lift_state (lift_state push_ui) in
     let c_server := lift_state (map_state
       (fun ss => match ss with (s1, s2, s3) => (s1, s3, s2) end)
       (fun ss => match ss with (s1, s2, s3) => (s1, s3, s2) end)
-      (lift_state (push_server tt))) in
+      (lift_state push_server)) in
     Concurrency.par_unit c_ui c_server.
 
   (** Handle an event from the UI. *)
@@ -187,11 +187,11 @@ Module TodoManager.
       lift_state (lift_state (lift_state c)) in
     match event with
     | UiInput.Add task =>
-      let! _ := lift (Model.add task) in
-      broadcast_model tt
+      do! lift (Model.add task) in
+      broadcast_model
     | UiInput.Remove id =>
-      let! _ := lift (Model.remove id) in
-      broadcast_model tt
+      do! lift (Model.remove id) in
+      broadcast_model
     end.
 
   Definition eval_handle_ui (inputs : list UiInput.t) (entropy : Entropy.t)
@@ -220,8 +220,8 @@ Module TodoManager.
     : C.t (Model.t * Log.t UiOutput.t) Empty_set unit :=
     match event with
     | ServerInput.Make tasks =>
-      let! _ := lift_state (Model.set (Model.Make tasks)) in
-      push_ui tt
+      do! lift_state (Model.set (Model.Make tasks)) in
+      push_ui
     end.
 
   Definition eval_handle_server (inputs : list ServerInput.t) (entropy : Entropy.t) : list UiOutput.t :=
@@ -251,7 +251,7 @@ Module TodoManager.
     (Model.t * Log.t UiOutput.t * Log.t ServerOutput.t * Event.t UiInput.t * Event.t ServerInput.t * Entropy.t)%type.
 
   (** The TODO manager client. *)
-  Definition todo (_ : unit) : C.t State Empty_set unit :=
+  Definition todo : C.t State Empty_set unit :=
     let c_ui : C.t State Empty_set unit :=
       (* Handle events concurrently. *)
       let c := Event.loop_par handle_ui in
@@ -272,7 +272,7 @@ Module TodoManager.
 
   Definition eval (ui_inputs : list UiInput.t) (server_inputs : list ServerInput.t) (entropy : Entropy.t)
     : list UiOutput.t * list ServerOutput.t :=
-    match snd (eval (todo tt) (Model.Make [], [], [], ui_inputs, server_inputs, entropy)) with
+    match snd (eval todo (Model.Make [], [], [], ui_inputs, server_inputs, entropy)) with
     | (_, ui_outputs, server_outputs, _, _, _) => (ui_outputs, server_outputs)
     end.
 
@@ -282,7 +282,7 @@ Module TodoManager.
 
   Definition test_2 :
     eval [UiInput.Add "task1"] [] (Entropy.random 12) =
-      ([UiOutput.Make ["task1"]], [ServerOutput.Make ["task1"]]) :=
+      ([], [ServerOutput.Make ["task1"]]) :=
     eq_refl.
 
   Definition test_3 :

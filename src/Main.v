@@ -368,11 +368,6 @@ Module Event.
       loop_par (fun n =>
         lift_state (Log.log n)).
 
-(*Compute
-  match snd (eval (List.iter_par (fun n => lift_state (Log.log n)) [1; 2; 3]) ([], Entropy.left)) with
-  | (output, _) => output
-  end.*)
-
     Definition eval (inputs : list nat) (entropy : Entropy.t) : list nat :=
       match snd (eval (log_all tt) ([], inputs, entropy)) with
       | (output, _, _) => output
@@ -381,7 +376,6 @@ Module Event.
     Definition test_1 : eval [] Entropy.left = [] :=
       eq_refl.
 
-(* Compute eval [1; 2; 3] Entropy.left. *)
     Definition test_2 : eval [1; 2; 3] Entropy.left = [3; 2; 1] :=
       eq_refl.
 

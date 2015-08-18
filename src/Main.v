@@ -15,18 +15,6 @@ Module C.
   Arguments Break {S E A} _ _.
 End C.
 
-(** Monadic return. *)
-Definition ret {S E A} (v : A) : C.t S E A :=
-  C.Value v.
-
-(** Monadic bind. *)
-Fixpoint bind {S E A B} (x : C.t S E A) (f : A -> C.t S E B) : C.t S E B :=
-  match x with
-  | C.Value v => f v
-  | C.Error e => C.Error e
-  | C.Break xs ss => C.Break (fun s => bind (xs s) f) ss
-  end.
-
 Module Eq.
   Inductive t {S E A} : C.t S E A -> C.t S E A -> Prop :=
   | Value : forall (v : A), t (C.Value v) (C.Value v)
@@ -53,6 +41,23 @@ Module Eq.
   Qed.
 End Eq.
 
+(** Monadic return. *)
+Definition ret {S E A} (v : A) : C.t S E A :=
+  C.Value v.
+
+(** Monadic bind. *)
+Fixpoint bind {S E A B} (x : C.t S E A) (f : A -> C.t S E B) : C.t S E B :=
+  match x with
+  | C.Value v => f v
+  | C.Error e => C.Error e
+  | C.Break xs ss => C.Break (fun s => bind (xs s) f) ss
+  end.
+
+Module Notations.
+  Notation "'let!' X ':=' A 'in' B" := (bind A (fun X => B))
+    (at level 200, X ident, A at level 100, B at level 200).
+End Notations.
+
 Module MonadicLaw.
   Definition neutral_left {S E A B} (x : A) (f : A -> C.t S E B)
     : Eq.t (bind (ret x) f) (f x).
@@ -77,61 +82,54 @@ End MonadicLaw.
 
 (** Raw evaluation. *)
 Fixpoint eval {S E A} (x : C.t S E A) (s : S) : (A + E) * S :=
-  match C.body x s with
-  | Val x => (inl x, s)
-  | Err e => (inr e, s)
-  | Com (x, s) => eval x s
+  match x with
+  | C.Value v => (inl v, s)
+  | C.Error e => (inr e, s)
+  | C.Break xs ss => eval (xs s) (ss s)
   end.
 
 (** Augment the state. *)
 Fixpoint lift_state {S1 S2 E A} (x : C.t S1 E A) : C.t (S1 * S2) E A :=
-  C.New (fun (s : S1 * S2) =>
-    let (s1, s2) := s in
-    match C.body x s1 with
-    | Val x => Val x
-    | Err e => Err e
-    | Com (x, s1) => Com (lift_state x, (s1, s2))
-    end).
+  match x with
+  | C.Value v => C.Value v
+  | C.Error e => C.Error e
+  | C.Break xs ss =>
+    C.Break (fun s => lift_state (xs (fst s))) (fun s => (ss (fst s), snd s))
+  end.
 
 (** Apply an isomorphism to the state. *)
 Fixpoint map_state {S1 S2 E A} (f : S1 -> S2) (g : S2 -> S1) (x : C.t S1 E A)
   : C.t S2 E A :=
-  C.New (fun (s2 : S2) =>
-    let s1 := g s2 in
-    match C.body x s1 with
-    | Val x => Val x
-    | Err e => Err e
-    | Com (x, s1) => Com (map_state f g x, f s1)
-    end).
-
-Module Notations.
-  Notation "'let!' X ':=' A 'in' B" := (bind A (fun X => B))
-    (at level 200, X ident, A at level 100, B at level 200).
-End Notations.
+  match x with
+  | C.Value v => C.Value v
+  | C.Error e => C.Error e
+  | C.Break xs ss =>
+    C.Break (fun s2 => map_state f g (xs (g s2))) (fun s2 => f (ss (g s2)))
+  end.
 
 Module Option.
   Definition none {A} : C.t unit unit A :=
-    C.New (fun _ => Err tt).
+    C.Error tt.
 End Option.
 
 Module Error.
   Definition raise {E A} (e : E) : C.t unit E A :=
-    C.New (fun _ => Err e).
+    C.Error e.
 End Error.
 
 Module Log.
   Definition t := list.
 
   Definition log {A} (x : A) : C.t (t A) Empty_set unit :=
-    C.New (fun s => (Val tt, x :: s)).
+    C.Break (fun _ => C.Value tt) (fun s => x :: s).
 End Log.
 
 Module State.
   Definition read {S : Type} (_ : unit) : C.t S Empty_set S :=
-    C.New (fun s => (Val s, s)).
+    C.Break (fun s => C.Value s) (fun s => s).
 
-  Definition write {S : Type} (x : S) : C.t S Empty_set unit :=
-    C.New (fun _ => (Val tt, x)).
+  Definition write {S : Type} (s : S) : C.t S Empty_set unit :=
+    C.Break (fun _ => C.Value tt) (fun _ => s).
 End State.
 
 (** A source of information for a concurrent scheduler. *)
@@ -191,49 +189,111 @@ End Entropy.
 Module Concurrency.
   Import Notations.
 
-  (** Executes [x] and [y] concurrently, using a boolean stream as source of entropy. *)
-  Fixpoint par {S E A B}
-    (x : C.t (S * Entropy.t) E A) (y : C.t (S * Entropy.t) E B) {struct x}
-    : C.t (S * Entropy.t) E (A * B) :=
-    let fix par_aux y {struct y} : C.t (S * Entropy.t) E (A * B) :=
-      C.New (fun (s : S * Entropy.t) =>
+  Module Old.
+    Module Result.
+      Inductive t (A B C : Type) : Type :=
+      | Val : A -> t A B C
+      | Err : B -> t A B C
+      | Mon : C -> t A B C.
+
+      Arguments Val {A B C} _.
+      Arguments Err {A B C} _.
+      Arguments Mon {A B C} _.
+    End Result.
+
+    Import Result.
+
+    Inductive t (S E A : Type) : Type :=
+    | New : (S -> Result.t A E (t S E A) * S) -> t S E A.
+    Arguments New {S E A} _.
+
+    Definition body {S E A} (x : t S E A) :=
+      match x with
+      | New x' => x'
+      end.
+
+    (** Monadic return. *)
+    Definition ret {S E A} (x : A) : t S E A :=
+      New (fun s => (Val x, s)).
+
+    (** Monadic bind. *)
+    Fixpoint bind {S E A B} (x : t S E A) (f : A -> t S E B) : t S E B :=
+      New (fun s =>
+        match body x s with
+        | (Val x, s) => (Mon (f x), s)
+        | (Err e, s) => (Err e, s)
+        | (Mon x, s) => (Mon (bind x f), s)
+        end).
+
+    Fixpoint of_C {S E A} (x : C.t S E A) : t S E A :=
+      match x with
+      | C.Value v => ret v
+      | C.Error e => New (fun s => (Err e, s))
+      | C.Break xs ss => New (fun s => (Mon (of_C (xs s)), ss s))
+      end.
+
+    Fixpoint to_C {S E A} (x : t S E A) : C.t S E A :=
+      C.Break
+        (fun s =>
+          let (r, _) := body x s in
+          match r with
+          | Val v => C.Value v
+          | Err e => C.Error e
+          | Mon x => to_C x
+          end)
+        (fun s =>
+          let (_, s) := body x s in
+          s).
+
+    Fixpoint par {S E A B}
+      (x : t (S * Entropy.t) E A) (y : t (S * Entropy.t) E B) {struct x}
+      : t (S * Entropy.t) E (A * B) :=
+      let fix par_aux y {struct y} : t (S * Entropy.t) E (A * B) :=
+        New (fun (s : S * Entropy.t) =>
+          match s with
+          | (s, Streams.Cons b bs) =>
+            if b then
+              let (r, ss) := body x (s, bs) in
+              (match r with
+              | Val x => Mon (bind y (fun y => ret (x, y)))
+              | Err e => Err e
+              | Mon x => Mon (par x y)
+              end, ss)
+            else
+              let (r, ss) := body y (s, bs) in
+              (match r with
+              | Val y => Mon (bind x (fun x => ret (x, y)))
+              | Err e => Err e
+              | Mon y => Mon (par_aux y)
+              end, ss)
+          end) in
+      New (fun (s : S * Entropy.t) =>
         match s with
         | (s, Streams.Cons b bs) =>
           if b then
-            let (r, ss) := C.body x (s, bs) in
+            let (r, ss) := body x (s, bs) in
             (match r with
-            | Val x => Com (let! y := y in ret (x, y))
+            | Val x => Mon (bind y (fun y => ret (x, y)))
             | Err e => Err e
-            | Com x => Com (par x y)
+            | Mon x => Mon (par x y)
             end, ss)
           else
-            let (r, ss) := C.body y (s, bs) in
+            let (r, ss) := body y (s, bs) in
             (match r with
-            | Val y => Com (let! x := x in ret (x, y))
+            | Val y => Mon (bind x (fun x => ret (x, y)))
             | Err e => Err e
-            | Com y => Com (par_aux y)
+            | Mon y => Mon (par_aux y)
             end, ss)
-        end) in
-    C.New (fun (s : S * Entropy.t) =>
-      match s with
-      | (s, Streams.Cons b bs) =>
-        if b then
-          let (r, ss) := C.body x (s, bs) in
-          (match r with
-          | Val x => Com (let! y := y in ret (x, y))
-          | Err e => Err e
-          | Com x => Com (par x y)
-          end, ss)
-        else
-          let (r, ss) := C.body y (s, bs) in
-          (match r with
-          | Val y => Com (let! x := x in ret (x, y))
-          | Err e => Err e
-          | Com y => Com (par_aux y)
-          end, ss)
-      end).
+        end).
+  End Old.
 
-  Definition par_unit {S E} (x : C.t (S * Entropy.t) E unit) (y : C.t (S * Entropy.t) E unit)
+  Fixpoint par {S E A B}
+    (x : C.t (S * Entropy.t) E A) (y : C.t (S * Entropy.t) E B)
+    : C.t (S * Entropy.t) E (A * B) :=
+    Old.to_C (Old.par (Old.of_C x) (Old.of_C y)).
+
+  Definition par_unit {S E}
+    (x : C.t (S * Entropy.t) E unit) (y : C.t (S * Entropy.t) E unit)
     : C.t (S * Entropy.t) E unit :=
     let! _ := par x y in
     ret tt.
@@ -242,8 +302,8 @@ Module Concurrency.
   Fixpoint atomic {S E A} (x : C.t S E A) : C.t S E A :=
     C.New (fun (s : S) =>
       match C.body x s with
-      | (Val _, _) as y | (Err _, _) as y => y
-      | (Com x, s) => C.body (atomic x) s
+      | (C.Value _, _) as y | (C.Error _, _) as y => y
+      | (C.Break x, s) => C.body (atomic x) s
       end).
 End Concurrency.
 
@@ -272,7 +332,7 @@ Module Event.
   Definition loop_seq {S E A} (f : A -> C.t S E unit) : C.t (S * t A) E unit :=
     C.New (fun (s : S * t A) =>
       let (s, events) := s in
-      (Com (lift_state (List.iter_seq f events)), (s, []))).
+      (C.Break (lift_state (List.iter_seq f events)), (s, []))).
 
   Definition loop_par {S E A} (f : A -> C.t (S * Entropy.t) E unit)
     : C.t (S * t A * Entropy.t) E unit :=
@@ -285,7 +345,7 @@ Module Event.
           (fun ss => match ss with (s1, s2, s3) => (s1, s3, s2) end)
           (fun ss => match ss with (s1, s2, s3) => (s1, s3, s2) end)
           c in
-        (Com c, (s, [], entropy))
+        (C.Break c, (s, [], entropy))
       end).
 
   Module Test.

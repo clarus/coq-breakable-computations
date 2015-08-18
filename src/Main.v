@@ -4,67 +4,72 @@ Require Import Coq.Lists.Streams.
 
 Import ListNotations.
 
-Module Result.
-  Inductive t (A B C : Type) : Type :=
-  | Val : A -> t A B C
-  | Err : B -> t A B C
-  | Com : C -> t A B C.
-
-  Arguments Val {A B C} _.
-  Arguments Err {A B C} _.
-  Arguments Com {A B C} _.
-End Result.
-
-Import Result.
-
 (** Definition of a computation. *)
 Module C.
-  Inductive t (S : Type) (E : Type) (A : Type) : Type :=
-  | New : (S -> Result.t A E (t S E A * S)) -> t S E A.
-  Arguments New {S E A} _.
-
-  Definition body {S E A} (x : t S E A) :=
-    match x with
-    | New x' => x'
-    end.
+  Inductive t (S E A : Type) : Type :=
+  | Value : A -> t S E A
+  | Error : E -> t S E A
+  | Break : (S -> t S E A) -> (S -> S) -> t S E A.
+  Arguments Value {S E A} _.
+  Arguments Error {S E A} _.
+  Arguments Break {S E A} _ _.
 End C.
 
 (** Monadic return. *)
 Definition ret {S E A} (v : A) : C.t S E A :=
-  C.New (fun s => Val v).
+  C.Value v.
 
 (** Monadic bind. *)
 Fixpoint bind {S E A B} (x : C.t S E A) (f : A -> C.t S E B) : C.t S E B :=
-  C.New (fun s =>
-    match C.body x s with
-    | Val v => C.body (f v) s
-    | Err e => Err e
-    | Com (x, s') => Com (bind x f, s')
-    end).
+  match x with
+  | C.Value v => f v
+  | C.Error e => C.Error e
+  | C.Break xs ss => C.Break (fun s => bind (xs s) f) ss
+  end.
 
-Module Notations.
-  Notation "'let!' X ':=' A 'in' B" := (bind A (fun X => B))
-    (at level 200, X ident, A at level 100, B at level 200).
-End Notations.
+Module Eq.
+  Inductive t {S E A} : C.t S E A -> C.t S E A -> Prop :=
+  | Value : forall (v : A), t (C.Value v) (C.Value v)
+  | Error : forall (e : E), t (C.Error e) (C.Error e)
+  | Break : forall xs1 xs2 ss, (forall s, t (xs1 s) (xs2 s)) ->
+    t (C.Break xs1 ss) (C.Break xs2 ss).
+
+  Fixpoint reflexivity {S E A} {x : C.t S E A} : t x x.
+    destruct x as [v | e | xs ss]; constructor.
+    intro s; now apply reflexivity.
+  Qed.
+
+  Fixpoint symmetry {S E A} {x1 x2 : C.t S E A} (H : t x1 x2) : t x2 x1.
+    destruct H; constructor.
+    intro s; now apply symmetry.
+  Qed.
+
+  Fixpoint transitivity {S E A} {x1 x2 x3 : C.t S E A}
+    (H12 : t x1 x2) (H23 : t x2 x3) : t x1 x3.
+    destruct H12; try apply H23.
+    inversion H23.
+    apply Break.
+    intro s; now apply (transitivity _ _ _ _ _ _  (H s)).
+  Qed.
+End Eq.
 
 Module MonadicLaw.
-  Definition extensionality : Prop :=
+  (*Definition extensionality : Prop :=
     forall (S E A : Type) (x1 x2 : C.t S E A),
-      (forall (s : S), C.body x1 s = C.body x2 s) -> x1 = x2.
+      (forall (s : S), C.body x1 s = C.body x2 s) -> x1 = x2.*)
 
   Definition neutral_left {S E A B} (x : A) (f : A -> C.t S E B)
     : bind (ret x) f = f x.
-    simpl; destruct (f x).
     reflexivity.
   Qed.
 
-  Fixpoint neutral_right (H : extensionality) {S E A} (x : C.t S E A)
-    : bind x ret = x.
-    apply H; intro s.
-    destruct x as [x']; simpl; destruct (x' s) as [v | e | [x s']].
-    - reflexivity.
-    - reflexivity.
-    - now rewrite neutral_right.
+  Fixpoint neutral_right {S E A} (x : C.t S E A)
+    : Eq.t (bind x ret) x.
+    destruct x as [v | e | xs ss]; simpl.
+    - apply Eq.Value.
+    - apply Eq.Error.
+    - apply Eq.Break.
+      intro s; apply neutral_right.
   Qed.
 
   Fixpoint associativity (H : extensionality) {S E A B C}
@@ -106,6 +111,11 @@ Fixpoint map_state {S1 S2 E A} (f : S1 -> S2) (g : S2 -> S1) (x : C.t S1 E A)
     | Err e => Err e
     | Com (x, s1) => Com (map_state f g x, f s1)
     end).
+
+Module Notations.
+  Notation "'let!' X ':=' A 'in' B" := (bind A (fun X => B))
+    (at level 200, X ident, A at level 100, B at level 200).
+End Notations.
 
 Module Option.
   Definition none {A} : C.t unit unit A :=

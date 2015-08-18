@@ -54,8 +54,14 @@ Fixpoint bind {S E A B} (x : C.t S E A) (f : A -> C.t S E B) : C.t S E B :=
   end.
 
 Module Notations.
-  Notation "'let!' X ':=' A 'in' B" := (bind A (fun X => B))
-    (at level 200, X ident, A at level 100, B at level 200).
+  Notation "'let!' x ':=' A 'in' B" := (bind A (fun x => B))
+    (at level 200, x ident, A at level 100, B at level 200).
+
+  Notation "'let!' x : T ':=' A 'in' B" := (bind A (fun (x : T) => B))
+    (at level 200, x ident, A at level 100, T at level 200, B at level 200).
+
+  Notation "'do!' A 'in' B" := (bind A (fun (_ : unit) => B))
+    (at level 200, A at level 100, B at level 200).
 End Notations.
 
 Module MonadicLaw.
@@ -125,10 +131,10 @@ Module Log.
 End Log.
 
 Module State.
-  Definition read {S : Type} (_ : unit) : C.t S Empty_set S :=
+  Definition read {S E : Type} : C.t S E S :=
     C.Break (fun s => C.Value s) (fun s => s).
 
-  Definition write {S : Type} (s : S) : C.t S Empty_set unit :=
+  Definition write {S E : Type} (s : S) : C.t S E unit :=
     C.Break (fun _ => C.Value tt) (fun _ => s).
 End State.
 
@@ -285,6 +291,13 @@ Module Concurrency.
             | Mon y => Mon (par_aux y)
             end, ss)
         end).
+
+    Fixpoint atomic {S E A} (x : t S E A) : t S E A :=
+      New (fun (s : S) =>
+        match body x s with
+        | (Val _, _) as y | (Err _, _) as y => y
+        | (Mon x, s) => body (atomic x) s
+        end).
   End Old.
 
   Fixpoint par {S E A B}
@@ -299,12 +312,8 @@ Module Concurrency.
     ret tt.
 
   (** Make [x] atomic. *)
-  Fixpoint atomic {S E A} (x : C.t S E A) : C.t S E A :=
-    C.New (fun (s : S) =>
-      match C.body x s with
-      | (C.Value _, _) as y | (C.Error _, _) as y => y
-      | (C.Break x, s) => C.body (atomic x) s
-      end).
+  Definition atomic {S E A} (x : C.t S E A) : C.t S E A :=
+    Old.to_C (Old.atomic (Old.of_C x)).
 End Concurrency.
 
 Module List.
@@ -327,31 +336,42 @@ Module List.
 End List.
 
 Module Event.
+  Import Notations.
+
   Definition t := list.
 
   Definition loop_seq {S E A} (f : A -> C.t S E unit) : C.t (S * t A) E unit :=
-    C.New (fun (s : S * t A) =>
-      let (s, events) := s in
-      (C.Break (lift_state (List.iter_seq f events)), (s, []))).
+    let! s_events : S * t A := State.read in
+    let (s, events) := s_events in
+    do! lift_state (List.iter_seq f events) in
+    let! s_events : S * t A := State.read in
+    let (s, _) := s_events in
+    State.write (s, []).
 
   Definition loop_par {S E A} (f : A -> C.t (S * Entropy.t) E unit)
-    : C.t (S * t A * Entropy.t) E unit :=
-    C.New (fun (s : S * t A * Entropy.t) =>
-      match s with
-      | (s, events, entropy) =>
-        let c := List.iter_par f events in
-        let c := lift_state c in
-        let c := map_state
-          (fun ss => match ss with (s1, s2, s3) => (s1, s3, s2) end)
-          (fun ss => match ss with (s1, s2, s3) => (s1, s3, s2) end)
-          c in
-        (C.Break c, (s, [], entropy))
-      end).
+    : C.t ((S * t A) * Entropy.t) E unit :=
+    let! state := State.read in
+    match state with
+    | ((s, events), bs) =>
+      do! map_state
+        (fun s => match s with (s1, s2, s3) => (s1, s3, s2) end)
+        (fun s => match s with (s1, s2, s3) => (s1, s3, s2) end)
+        (lift_state (List.iter_par f events)) in
+      let! state := State.read in
+      match state with
+      | ((s, _), bs) => State.write ((s, []), bs)
+      end
+    end.
 
   Module Test.
     Definition log_all (_ : unit) : C.t (Log.t nat * t nat * Entropy.t) Empty_set unit :=
       loop_par (fun n =>
         lift_state (Log.log n)).
+
+(*Compute
+  match snd (eval (List.iter_par (fun n => lift_state (Log.log n)) [1; 2; 3]) ([], Entropy.left)) with
+  | (output, _) => output
+  end.*)
 
     Definition eval (inputs : list nat) (entropy : Entropy.t) : list nat :=
       match snd (eval (log_all tt) ([], inputs, entropy)) with
@@ -361,6 +381,7 @@ Module Event.
     Definition test_1 : eval [] Entropy.left = [] :=
       eq_refl.
 
+(* Compute eval [1; 2; 3] Entropy.left. *)
     Definition test_2 : eval [1; 2; 3] Entropy.left = [3; 2; 1] :=
       eq_refl.
 

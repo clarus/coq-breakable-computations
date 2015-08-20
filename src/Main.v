@@ -19,25 +19,27 @@ Module Eq.
   Inductive t {S E A} : C.t S E A -> C.t S E A -> Prop :=
   | Value : forall (v : A), t (C.Value v) (C.Value v)
   | Error : forall (e : E), t (C.Error e) (C.Error e)
-  | Break : forall xs1 xs2 ss, (forall s, t (xs1 s) (xs2 s)) ->
-    t (C.Break xs1 ss) (C.Break xs2 ss).
+  | Break : forall xs1 xs2 ss1 ss2,
+    (forall s, t (xs1 s) (xs2 s)) -> (forall s, ss1 s = ss2 s) ->
+    t (C.Break xs1 ss1) (C.Break xs2 ss2).
 
   Fixpoint reflexivity {S E A} {x : C.t S E A} : t x x.
-    destruct x as [v | e | xs ss]; constructor.
-    intro s; now apply reflexivity.
+    destruct x as [v | e | xs ss]; now constructor.
   Qed.
 
   Fixpoint symmetry {S E A} {x1 x2 : C.t S E A} (H : t x1 x2) : t x2 x1.
     destruct H; constructor.
-    intro s; now apply symmetry.
+    - intro s; now apply symmetry.
+    - intro s; now symmetry.
   Qed.
 
   Fixpoint transitivity {S E A} {x1 x2 x3 : C.t S E A}
     (H12 : t x1 x2) (H23 : t x2 x3) : t x1 x3.
     destruct H12; try apply H23.
     inversion H23.
-    apply Break.
-    intro s; now apply (transitivity _ _ _ _ _ _  (H s)).
+    apply Break; intro s.
+    - now apply (transitivity _ _ _ _ _ _  (H s)).
+    - congruence.
   Qed.
 End Eq.
 
@@ -74,7 +76,8 @@ Module MonadicLaw.
     : Eq.t (bind x ret) x.
     destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
     apply Eq.Break; intro s.
-    apply neutral_right.
+    - apply neutral_right.
+    - reflexivity.
   Qed.
 
   Fixpoint associativity {S E A B C}
@@ -82,7 +85,8 @@ Module MonadicLaw.
     : Eq.t (bind (bind x f) g) (bind x (fun x => bind (f x) g)).
     destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
     apply Eq.Break; intro s.
-    apply associativity.
+    - apply associativity.
+    - reflexivity.
   Qed.
 End MonadicLaw.
 
@@ -147,6 +151,7 @@ Module EvalProperties.
     : M.Eq.t (eval x1) (eval x2).
     destruct H; simpl; try apply M.Eq.reflexivity.
     intro s.
+    replace (ss2 s) with (ss1 s); trivial.
     now apply eq.
   Qed.
 End EvalProperties.
@@ -180,8 +185,7 @@ Module LiftProperties.
       (lift_state (bind x f))
       (bind (lift_state x) (fun v => lift_state (f v))).
     destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
-    apply Eq.Break.
-    intro s; destruct s as [s1 s2]; simpl.
+    apply Eq.Break; intro s; try reflexivity; destruct s as [s1 s2]; simpl.
     apply state_bind.
   Qed.
 
@@ -196,16 +200,14 @@ Module LiftProperties.
       (lift_error (bind x f))
       (bind (lift_error x) (fun v => lift_error (f v))).
     destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
-    apply Eq.Break.
-    intro s; apply error_bind.
+    apply Eq.Break; intro s; try reflexivity; apply error_bind.
   Qed.
 
   Fixpoint error_state {S1 S2 E1 E2 A} {x : C.t S1 E1 A}
     : Eq.t (S := S1 * S2) (E := E1 + E2)
       (lift_error (lift_state x)) (lift_state (lift_error x)).
     destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
-    apply Eq.Break; intro s.
-    apply error_state.
+    apply Eq.Break; intro s; try reflexivity; apply error_state.
   Qed.
 End LiftProperties.
 
@@ -243,14 +245,14 @@ Module MapProperties.
       (map_state f12 f21 (bind x f))
       (bind (map_state f12 f21 x) (fun v => map_state f12 f21 (f v))).
     destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
-    apply Eq.Break; intro s.
+    apply Eq.Break; intro s; try reflexivity.
     apply state_bind.
   Qed.
 
   Fixpoint state_id {S E A} {x : C.t S E A}
     : Eq.t (map_state (fun s => s) (fun s => s) x) x.
     destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
-    apply Eq.Break; intro s.
+    apply Eq.Break; intro s; try reflexivity.
     apply state_id.
   Qed.
 
@@ -260,8 +262,17 @@ Module MapProperties.
       (map_state f23 f32 (map_state f12 f21 x))
       (map_state (compose f12 f23) (compose f32 f21) x).
     destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
-    apply Eq.Break; intro s.
+    apply Eq.Break; intro s; try reflexivity.
     apply state_compose.
+  Qed.
+
+  Fixpoint state_rev {S1 S2 E A} {f12 : S1 -> S2} {f21 : S2 -> S1}
+    (H : forall s1, f21 (f12 s1) = s1) {x : C.t S1 E A}
+    : Eq.t (map_state f21 f12 (map_state f12 f21 x)) x.
+    destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
+    apply Eq.Break; intro s; repeat rewrite H.
+    - now apply state_rev.
+    - reflexivity.
   Qed.
 
   Definition error_ret {S E1 E2 A} {f12 : E1 -> E2} {f21 : E2 -> E1} {v : A}
@@ -275,14 +286,14 @@ Module MapProperties.
       (map_error f12 f21 (bind x f))
       (bind (map_error f12 f21 x) (fun v => map_error f12 f21 (f v))).
     destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
-    apply Eq.Break; intro s.
+    apply Eq.Break; intro s; try reflexivity.
     apply error_bind.
   Qed.
 
   Fixpoint error_id {S E A} {x : C.t S E A}
     : Eq.t (map_error (fun s => s) (fun s => s) x) x.
     destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
-    apply Eq.Break; intro s.
+    apply Eq.Break; intro s; try reflexivity.
     apply error_id.
   Qed.
 
@@ -292,7 +303,7 @@ Module MapProperties.
       (map_error f23 f32 (map_error f12 f21 x))
       (map_error (compose f12 f23) (compose f32 f21) x).
     destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
-    apply Eq.Break; intro s.
+    apply Eq.Break; intro s; try reflexivity.
     apply error_compose.
   Qed.
 End MapProperties.

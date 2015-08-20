@@ -209,17 +209,6 @@ Module LiftProperties.
   Qed.
 End LiftProperties.
 
-Fixpoint inject_state {S1 S2 E A} (f : S1 -> S2 -> S2) (g : S2 -> S1)
-  (x : C.t S1 E A) : C.t S2 E A :=
-  match x with
-  | C.Value v => C.Value v
-  | C.Error e => C.Error e
-  | C.Break xs ss =>
-    C.Break (fun s => inject_state f g (xs (g s))) (fun s => f (ss (g s)) s)
-  end.
-
-(* g (f s1' s12) = s1' *)
-
 (** Apply an isomorphism to the state. *)
 Fixpoint map_state {S1 S2 E A} (f : S1 -> S2) (g : S2 -> S1) (x : C.t S1 E A)
   : C.t S2 E A :=

@@ -228,6 +228,75 @@ Fixpoint map_error {S E1 E2 A} (f : E1 -> E2) (g : E2 -> E1) (x : C.t S E1 A)
   | C.Break xs ss => C.Break (fun s => map_error f g (xs s)) ss
   end.
 
+Module MapProperties.
+  Definition compose {A B C} (f : A -> B) (g : B -> C) : A -> C :=
+    fun x => g (f x).
+
+  Definition state_ret {S1 S2 E A} {f12 : S1 -> S2} {f21 : S2 -> S1} {v : A}
+    : Eq.t (E := E) (map_state f12 f21 (ret v)) (ret v).
+    apply Eq.reflexivity.
+  Qed.
+
+  Fixpoint state_bind {S1 S2 E A B} {f12 : S1 -> S2} {f21 : S2 -> S1}
+    (x : C.t S1 E A) (f : A -> C.t S1 E B) {struct x}
+    : Eq.t (E := E)
+      (map_state f12 f21 (bind x f))
+      (bind (map_state f12 f21 x) (fun v => map_state f12 f21 (f v))).
+    destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
+    apply Eq.Break; intro s.
+    apply state_bind.
+  Qed.
+
+  Fixpoint state_id {S E A} {x : C.t S E A}
+    : Eq.t (map_state (fun s => s) (fun s => s) x) x.
+    destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
+    apply Eq.Break; intro s.
+    apply state_id.
+  Qed.
+
+  Fixpoint state_compose {S1 S2 S3 E A} {f12 : S1 -> S2} {f21 : S2 -> S1}
+    {f23 : S2 -> S3} {f32 : S3 -> S2} {x : C.t S1 E A}
+    : Eq.t
+      (map_state f23 f32 (map_state f12 f21 x))
+      (map_state (compose f12 f23) (compose f32 f21) x).
+    destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
+    apply Eq.Break; intro s.
+    apply state_compose.
+  Qed.
+
+  Definition error_ret {S E1 E2 A} {f12 : E1 -> E2} {f21 : E2 -> E1} {v : A}
+    : Eq.t (S := S) (map_error f12 f21 (ret v)) (ret v).
+    apply Eq.reflexivity.
+  Qed.
+
+  Fixpoint error_bind {S E1 E2 A B} {f12 : E1 -> E2} {f21 : E2 -> E1}
+    (x : C.t S E1 A) (f : A -> C.t S E1 B) {struct x}
+    : Eq.t (S := S)
+      (map_error f12 f21 (bind x f))
+      (bind (map_error f12 f21 x) (fun v => map_error f12 f21 (f v))).
+    destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
+    apply Eq.Break; intro s.
+    apply error_bind.
+  Qed.
+
+  Fixpoint error_id {S E A} {x : C.t S E A}
+    : Eq.t (map_error (fun s => s) (fun s => s) x) x.
+    destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
+    apply Eq.Break; intro s.
+    apply error_id.
+  Qed.
+
+  Fixpoint error_compose {S E1 E2 E3 A} {f12 : E1 -> E2} {f21 : E2 -> E1}
+    {f23 : E2 -> E3} {f32 : E3 -> E2} {x : C.t S E1 A}
+    : Eq.t
+      (map_error f23 f32 (map_error f12 f21 x))
+      (map_error (compose f12 f23) (compose f32 f21) x).
+    destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
+    apply Eq.Break; intro s.
+    apply error_compose.
+  Qed.
+End MapProperties.
+
 Module Option.
   Definition none {A} : C.t unit unit A :=
     C.Error tt.

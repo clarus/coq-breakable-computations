@@ -291,13 +291,6 @@ Module Concurrency.
             | Mon y => Mon (par_aux y)
             end, ss)
         end).
-
-    Fixpoint atomic {S E A} (x : t S E A) : t S E A :=
-      New (fun (s : S) =>
-        match body x s with
-        | (Val _, _) as y | (Err _, _) as y => y
-        | (Mon x, s) => body (atomic x) s
-        end).
   End Old.
 
   Fixpoint par {S E A B}
@@ -313,7 +306,17 @@ Module Concurrency.
 
   (** Make [x] atomic. *)
   Definition atomic {S E A} (x : C.t S E A) : C.t S E A :=
-    Old.to_C (Old.atomic (Old.of_C x)).
+    match x with
+    | C.Value _ | C.Error _ => x
+    | C.Break _ _ =>
+      C.Break
+        (fun s =>
+          match fst (eval x s) with
+          | inl v => C.Value v
+          | inr e => C.Error e
+          end)
+        (fun s => snd (eval x s))
+    end.
 End Concurrency.
 
 Module List.

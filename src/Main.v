@@ -86,13 +86,70 @@ Module MonadicLaw.
   Qed.
 End MonadicLaw.
 
+(** Sequential monad. *)
+Module M.
+  Definition t (S E A : Type) : Type :=
+    S -> (A + E) * S.
+
+  Definition ret {S E A} (v : A) : t S E A :=
+    fun s => (inl v, s).
+
+  Definition bind {S E A B} (x : t S E A) (f : A -> t S E B) : t S E B :=
+    fun s =>
+      let (r, s) := x s in
+      match r with
+      | inl v => f v s
+      | inr e => (inr e, s)
+      end.
+
+  Module Eq.
+    Definition t {S E A} (x1 x2 : t S E A) : Prop :=
+      forall s, x1 s = x2 s.
+
+    Definition reflexivity {S E A} {x : M.t S E A} : t x x.
+      intro s; reflexivity.
+    Qed.
+
+    Definition symmetry {S E A} {x1 x2 : M.t S E A} (H : t x1 x2) : t x2 x1.
+      intro s; now symmetry.
+    Qed.
+
+    Definition transitivity {S E A} {x1 x2 x3 : M.t S E A}
+      (H12 : t x1 x2) (H23 : t x2 x3) : t x1 x3.
+      intro s; now rewrite H12.
+    Qed.
+  End Eq.
+End M.
+
 (** Raw evaluation. *)
-Fixpoint eval {S E A} (x : C.t S E A) (s : S) : (A + E) * S :=
-  match x with
-  | C.Value v => (inl v, s)
-  | C.Error e => (inr e, s)
-  | C.Break xs ss => eval (xs s) (ss s)
-  end.
+Fixpoint eval {S E A} (x : C.t S E A) : M.t S E A :=
+  fun s =>
+    match x with
+    | C.Value v => (inl v, s)
+    | C.Error e => (inr e, s)
+    | C.Break xs ss => eval (xs s) (ss s)
+    end.
+
+Module EvalProperties.
+  Definition ret {S E A} {v : A}
+    : M.Eq.t (S := S) (E := E) (eval (ret v)) (M.ret v).
+    apply M.Eq.reflexivity.
+  Qed.
+
+  Fixpoint bind {S E A B} (x : C.t S E A) (f : A -> C.t S E B) {struct x}
+    : M.Eq.t (eval (bind x f)) (M.bind (eval x) (fun v => eval (f v))).
+    destruct x as [v | e | xs ss]; unfold M.bind; simpl;
+      try apply M.Eq.reflexivity.
+    intro s; now rewrite bind.
+  Qed.
+
+  Fixpoint eq {S E A} {x1 x2 : C.t S E A} (H : Eq.t x1 x2)
+    : M.Eq.t (eval x1) (eval x2).
+    destruct H; simpl; try apply M.Eq.reflexivity.
+    intro s.
+    now apply eq.
+  Qed.
+End EvalProperties.
 
 (** Augment the state. *)
 Fixpoint lift_state {S1 S2 E A} (x : C.t S1 E A) : C.t (S1 * S2) E A :=
@@ -103,6 +160,66 @@ Fixpoint lift_state {S1 S2 E A} (x : C.t S1 E A) : C.t (S1 * S2) E A :=
     C.Break (fun s => lift_state (xs (fst s))) (fun s => (ss (fst s), snd s))
   end.
 
+(** Augment the error. *)
+Fixpoint lift_error {S E1 E2 A} (x : C.t S E1 A) : C.t S (E1 + E2) A :=
+  match x with
+  | C.Value v => C.Value v
+  | C.Error e => C.Error (inl e)
+  | C.Break xs ss => C.Break (fun s => lift_error (xs s)) ss
+  end.
+
+Module LiftProperties.
+  Definition state_ret {S1 S2 E A} {v : A}
+    : Eq.t (S := S1 * S2) (E := E) (lift_state (ret v)) (ret v).
+    apply Eq.reflexivity.
+  Qed.
+
+  Fixpoint state_bind {S1 S2 E A B} (x : C.t S1 E A) (f : A -> C.t S1 E B)
+    {struct x}
+    : Eq.t (S := S1 * S2) (E := E)
+      (lift_state (bind x f))
+      (bind (lift_state x) (fun v => lift_state (f v))).
+    destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
+    apply Eq.Break.
+    intro s; destruct s as [s1 s2]; simpl.
+    apply state_bind.
+  Qed.
+
+  Definition error_ret {S E1 E2 A} {v : A}
+    : Eq.t (S := S) (E := E1 + E2) (lift_error (ret v)) (ret v).
+    apply Eq.reflexivity.
+  Qed.
+
+  Fixpoint error_bind {S E1 E2 A B} (x : C.t S E1 A) (f : A -> C.t S E1 B)
+    {struct x}
+    : Eq.t (S := S) (E := E1 + E2)
+      (lift_error (bind x f))
+      (bind (lift_error x) (fun v => lift_error (f v))).
+    destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
+    apply Eq.Break.
+    intro s; apply error_bind.
+  Qed.
+
+  Fixpoint error_state {S1 S2 E1 E2 A} {x : C.t S1 E1 A}
+    : Eq.t (S := S1 * S2) (E := E1 + E2)
+      (lift_error (lift_state x)) (lift_state (lift_error x)).
+    destruct x as [v | e | xs ss]; simpl; try apply Eq.reflexivity.
+    apply Eq.Break; intro s.
+    apply error_state.
+  Qed.
+End LiftProperties.
+
+Fixpoint inject_state {S1 S2 E A} (f : S1 -> S2 -> S2) (g : S2 -> S1)
+  (x : C.t S1 E A) : C.t S2 E A :=
+  match x with
+  | C.Value v => C.Value v
+  | C.Error e => C.Error e
+  | C.Break xs ss =>
+    C.Break (fun s => inject_state f g (xs (g s))) (fun s => f (ss (g s)) s)
+  end.
+
+(* g (f s1' s12) = s1' *)
+
 (** Apply an isomorphism to the state. *)
 Fixpoint map_state {S1 S2 E A} (f : S1 -> S2) (g : S2 -> S1) (x : C.t S1 E A)
   : C.t S2 E A :=
@@ -111,6 +228,15 @@ Fixpoint map_state {S1 S2 E A} (f : S1 -> S2) (g : S2 -> S1) (x : C.t S1 E A)
   | C.Error e => C.Error e
   | C.Break xs ss =>
     C.Break (fun s2 => map_state f g (xs (g s2))) (fun s2 => f (ss (g s2)))
+  end.
+
+(** Apply an isomorphism to the error. *)
+Fixpoint map_error {S E1 E2 A} (f : E1 -> E2) (g : E2 -> E1) (x : C.t S E1 A)
+  : C.t S E2 A :=
+  match x with
+  | C.Value v => C.Value v
+  | C.Error e => C.Error (f e)
+  | C.Break xs ss => C.Break (fun s => map_error f g (xs s)) ss
   end.
 
 Module Option.

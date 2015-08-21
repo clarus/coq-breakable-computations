@@ -309,21 +309,30 @@ Module MapProperties.
 End MapProperties.
 
 Module Option.
-  Definition none {A} : C.t unit unit A :=
+  Definition none {S A} : C.t S unit A :=
     C.Error tt.
+
+  Fixpoint handle {S E A} (x : C.t S (unit + E) A) : C.t S E (option A) :=
+    match x with
+    | C.Value v => C.Value (Some v)
+    | C.Error (inl _) => C.Value None
+    | C.Error (inr e) => C.Error e
+    | C.Break xs ss => C.Break (fun s => handle (xs s)) ss
+    end.
 End Option.
 
 Module Error.
-  Definition raise {E A} (e : E) : C.t unit E A :=
+  Definition raise {S E A} (e : E) : C.t S E A :=
     C.Error e.
+
+  Fixpoint handle {S E1 E2 A} (x : C.t S (E1 + E2) A) : C.t S E2 (A + E1) :=
+    match x with
+    | C.Value v => C.Value (inl v)
+    | C.Error (inl e1) => C.Value (inr e1)
+    | C.Error (inr e2) => C.Error e2
+    | C.Break xs ss => C.Break (fun s => handle (xs s)) ss
+    end.
 End Error.
-
-Module Log.
-  Definition t := list.
-
-  Definition log {A} (x : A) : C.t (t A) Empty_set unit :=
-    C.Break (fun _ => C.Value tt) (fun s => x :: s).
-End Log.
 
 Module State.
   Definition read {S E : Type} : C.t S E S :=
@@ -332,6 +341,13 @@ Module State.
   Definition write {S E : Type} (s : S) : C.t S E unit :=
     C.Break (fun _ => C.Value tt) (fun _ => s).
 End State.
+
+Module Log.
+  Definition t := list.
+
+  Definition log {A} (x : A) : C.t (t A) Empty_set unit :=
+    C.Break (fun _ => C.Value tt) (fun s => x :: s).
+End Log.
 
 (** A source of information for a concurrent scheduler. *)
 Module Entropy.
@@ -390,108 +406,76 @@ End Entropy.
 Module Concurrency.
   Import Notations.
 
-  Module Old.
-    Module Result.
-      Inductive t (A B C : Type) : Type :=
-      | Val : A -> t A B C
-      | Err : B -> t A B C
-      | Mon : C -> t A B C.
-
-      Arguments Val {A B C} _.
-      Arguments Err {A B C} _.
-      Arguments Mon {A B C} _.
-    End Result.
-
-    Import Result.
-
-    Inductive t (S E A : Type) : Type :=
-    | New : (S -> Result.t A E (t S E A) * S) -> t S E A.
-    Arguments New {S E A} _.
-
-    Definition body {S E A} (x : t S E A) :=
-      match x with
-      | New x' => x'
-      end.
-
-    (** Monadic return. *)
-    Definition ret {S E A} (x : A) : t S E A :=
-      New (fun s => (Val x, s)).
-
-    (** Monadic bind. *)
-    Fixpoint bind {S E A B} (x : t S E A) (f : A -> t S E B) : t S E B :=
-      New (fun s =>
-        match body x s with
-        | (Val x, s) => (Mon (f x), s)
-        | (Err e, s) => (Err e, s)
-        | (Mon x, s) => (Mon (bind x f), s)
-        end).
-
-    Fixpoint of_C {S E A} (x : C.t S E A) : t S E A :=
-      match x with
-      | C.Value v => ret v
-      | C.Error e => New (fun s => (Err e, s))
-      | C.Break xs ss => New (fun s => (Mon (of_C (xs s)), ss s))
-      end.
-
-    Fixpoint to_C {S E A} (x : t S E A) : C.t S E A :=
-      C.Break
-        (fun s =>
-          let (r, _) := body x s in
-          match r with
-          | Val v => C.Value v
-          | Err e => C.Error e
-          | Mon x => to_C x
-          end)
-        (fun s =>
-          let (_, s) := body x s in
-          s).
-
-    Fixpoint par {S E A B}
-      (x : t (S * Entropy.t) E A) (y : t (S * Entropy.t) E B) {struct x}
-      : t (S * Entropy.t) E (A * B) :=
-      let fix par_aux y {struct y} : t (S * Entropy.t) E (A * B) :=
-        New (fun (s : S * Entropy.t) =>
-          match s with
-          | (s, Streams.Cons b bs) =>
-            if b then
-              let (r, ss) := body x (s, bs) in
-              (match r with
-              | Val x => Mon (bind y (fun y => ret (x, y)))
-              | Err e => Err e
-              | Mon x => Mon (par x y)
-              end, ss)
-            else
-              let (r, ss) := body y (s, bs) in
-              (match r with
-              | Val y => Mon (bind x (fun x => ret (x, y)))
-              | Err e => Err e
-              | Mon y => Mon (par_aux y)
-              end, ss)
-          end) in
-      New (fun (s : S * Entropy.t) =>
-        match s with
-        | (s, Streams.Cons b bs) =>
-          if b then
-            let (r, ss) := body x (s, bs) in
-            (match r with
-            | Val x => Mon (bind y (fun y => ret (x, y)))
-            | Err e => Err e
-            | Mon x => Mon (par x y)
-            end, ss)
-          else
-            let (r, ss) := body y (s, bs) in
-            (match r with
-            | Val y => Mon (bind x (fun x => ret (x, y)))
-            | Err e => Err e
-            | Mon y => Mon (par_aux y)
-            end, ss)
-        end).
-  End Old.
+  Definition choose {S E} : C.t (S * Entropy.t) E bool :=
+    let! state := State.read in
+    match state with
+    | (s, Streams.Cons b bs) =>
+      do! State.write (s, bs) in
+      ret b
+    end.
 
   Fixpoint par {S E A B}
-    (x : C.t (S * Entropy.t) E A) (y : C.t (S * Entropy.t) E B)
+    (x : C.t (S * Entropy.t) E A) (y : C.t (S * Entropy.t) E B) {struct x}
     : C.t (S * Entropy.t) E (A * B) :=
-    Old.to_C (Old.par (Old.of_C x) (Old.of_C y)).
+    let fix par_aux y {struct y} : C.t (S * Entropy.t) E (A * B) :=
+      match x with
+      | C.Value v_x =>
+        match y with
+        | C.Value v_y => C.Value (v_x, v_y)
+        | C.Error e_y => C.Error e_y
+        | C.Break _ _ => let! v_y := y in ret (v_x, v_y)
+        end
+      | C.Error e_x =>
+        match y with
+        | C.Value _ | C.Break _ _ => C.Error e_x
+        | C.Error e_y =>
+          let! b := choose in
+          if b then
+            C.Error e_x
+          else
+            C.Error e_y
+        end
+      | C.Break xs sxs =>
+        match y with
+        | C.Value v_y => let! v_x := x in ret (v_x, v_y)
+        | C.Error e_y => C.Error e_y
+        | C.Break ys sys =>
+          let! b := choose in
+          if b then
+            C.Break (fun s => par (xs s) y) sxs
+          else
+            C.Break (fun s => par_aux (ys s)) sys
+        end
+      end in
+    match x with
+    | C.Value v_x =>
+      match y with
+      | C.Value v_y => C.Value (v_x, v_y)
+      | C.Error e_y => C.Error e_y
+      | C.Break _ _ => let! v_y := y in ret (v_x, v_y)
+      end
+    | C.Error e_x =>
+      match y with
+      | C.Value _ | C.Break _ _ => C.Error e_x
+      | C.Error e_y =>
+        let! b := choose in
+        if b then
+          C.Error e_x
+        else
+          C.Error e_y
+      end
+    | C.Break xs sxs =>
+      match y with
+      | C.Value v_y => let! v_x := x in ret (v_x, v_y)
+      | C.Error e_y => C.Error e_y
+      | C.Break ys sys =>
+        let! b := choose in
+        if b then
+          C.Break (fun s => par (xs s) y) sxs
+        else
+          C.Break (fun s => par_aux (ys s)) sys
+      end
+    end.
 
   Definition par_unit {S E}
     (x : C.t (S * Entropy.t) E unit) (y : C.t (S * Entropy.t) E unit)

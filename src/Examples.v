@@ -79,19 +79,16 @@ Module ListOfPrints.
     12; 11; 10] :=
     eq_refl.
 
-  Definition test_2 : eval_par (print_seq_par 10 20) Entropy.left = [
-    29; 28; 27; 26; 25; 24; 23; 22; 21; 20; 19; 18; 17; 16; 15; 14; 13;
-    12; 11; 10] :=
+  Definition test_2 : eval_par (print_seq_par 10 8) Entropy.left =
+    [17; 16; 15; 14; 13; 12; 11; 10] :=
     eq_refl.
 
-  Definition test_3 : eval_par (print_seq_par 10 20) Entropy.right = [
-    10; 11; 12; 13; 14; 15; 16; 17; 18; 19; 20; 21; 22; 23; 24; 25; 26;
-    27; 28; 29] :=
+  Definition test_3 : eval_par (print_seq_par 10 8) Entropy.right =
+    [10; 11; 12; 13; 14; 15; 16; 17] :=
     eq_refl.
 
-  Definition test_4 : eval_par (print_seq_par 10 20) (Entropy.random 12) = [
-    28; 26; 27; 23; 25; 24; 29; 20; 22; 21; 16; 18; 19; 17; 13; 14; 15;
-    12; 11; 10] :=
+  Definition test_4 : eval_par (print_seq_par 10 8) (Entropy.random 12) =
+    [16; 17; 15; 14; 13; 12; 11; 10] :=
     eq_refl.
 End ListOfPrints.
 
@@ -280,9 +277,10 @@ Module TodoManager.
     eval [] [] (Entropy.random 12) = ([], []) :=
     eq_refl.
 
+
   Definition test_2 :
     eval [UiInput.Add "task1"] [] (Entropy.random 12) =
-      ([], [ServerOutput.Make ["task1"]]) :=
+      ([UiOutput.Make ["task1"]], [ServerOutput.Make ["task1"]]) :=
     eq_refl.
 
   Definition test_3 :
@@ -313,13 +311,11 @@ Module TodoManager.
         ServerOutput.Make ["task2"; "task3"]; ServerOutput.Make ["task3"]]) :=
     eq_refl.
 
+
   Definition test_7 :
     eval [UiInput.Add "task1"; UiInput.Add "task2"; UiInput.Add "task3"] [] (Entropy.random 10) =
-      ([UiOutput.Make ["task2"; "task1"; "task3"];
-        UiOutput.Make ["task1"; "task3"]; UiOutput.Make ["task3"]],
-      [ServerOutput.Make ["task2"; "task1"; "task3"];
-        ServerOutput.Make ["task1"; "task3"];
-        ServerOutput.Make ["task1"; "task3"]]) :=
+      ([UiOutput.Make ["task2"; "task1"; "task3"]],
+      [ServerOutput.Make ["task2"; "task1"; "task3"]]) :=
     eq_refl.
 
   Definition test_8 :
@@ -339,8 +335,7 @@ Module TodoManager.
 
   Definition test_10 :
     eval [UiInput.Add "task1"; UiInput.Add "task2"] [ServerInput.Make ["task3"]] (Entropy.random 10) =
-      ([UiOutput.Make ["task1"; "task3"]; UiOutput.Make ["task3"];
-        UiOutput.Make ["task2"]],
-      [ServerOutput.Make ["task1"; "task3"]; ServerOutput.Make ["task2"]]) :=
+      ([UiOutput.Make ["task1"]; UiOutput.Make ["task3"]],
+      [ServerOutput.Make ["task1"]; ServerOutput.Make ["task1"]]) :=
     eq_refl.
 End TodoManager.

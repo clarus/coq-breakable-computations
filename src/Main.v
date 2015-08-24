@@ -345,7 +345,7 @@ End State.
 Module Log.
   Definition t := list.
 
-  Definition log {A} (x : A) : C.t (t A) Empty_set unit :=
+  Definition log {E A} (x : A) : C.t (t A) E unit :=
     C.Break (fun _ => C.Value tt) (fun s => x :: s).
 End Log.
 

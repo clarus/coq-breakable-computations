@@ -432,12 +432,7 @@ Module Concurrency.
     : C.t (S * Entropy.t) E (A * B) :=
     let fix par_aux y {struct y} : C.t (S * Entropy.t) E (A * B) :=
       match x with
-      | C.Value v_x =>
-        match y with
-        | C.Value v_y => C.Value (v_x, v_y)
-        | C.Error e_y => C.Error e_y
-        | C.Break _ _ => let! v_y := y in ret (v_x, v_y)
-        end
+      | C.Value v_x => let! v_y := y in ret (v_x, v_y)
       | C.Error e_x =>
         match y with
         | C.Value _ | C.Break _ _ => C.Error e_x
@@ -461,12 +456,7 @@ Module Concurrency.
         end
       end in
     match x with
-    | C.Value v_x =>
-      match y with
-      | C.Value v_y => C.Value (v_x, v_y)
-      | C.Error e_y => C.Error e_y
-      | C.Break _ _ => let! v_y := y in ret (v_x, v_y)
-      end
+    | C.Value v_x => let! v_y := y in ret (v_x, v_y)
     | C.Error e_x =>
       match y with
       | C.Value _ | C.Break _ _ => C.Error e_x

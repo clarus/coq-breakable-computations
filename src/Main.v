@@ -342,6 +342,19 @@ Module State.
     C.Break (fun _ => C.Value tt) (fun _ => s).
 End State.
 
+Module NonTermination.
+  Import Notations.
+
+  Definition use_fuel {S E A B : Type} (f : A -> nat -> C.t S E (option B)) (x : A) : C.t (S * nat) (E + unit) B :=
+    let! s_fuel : S * nat := State.read in
+    let (s, fuel) := s_fuel in
+    let! result := lift_error (lift_state (f x fuel)) in
+    match result with
+    | None => C.Error (inr tt)
+    | Some y => ret y
+    end.
+End NonTermination.
+
 Module Log.
   Definition t := list.
 
